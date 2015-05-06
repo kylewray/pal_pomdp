@@ -1,2 +1,2 @@
-# proactive_learning_pomdp
+# pal_pomdp
 A POMDP model of proactive learning.
