@@ -33,12 +33,16 @@ irisFile = os.path.join(thisFilePath, "iris.pal")
 iris = PALPOMDP()
 iris.load(irisFile)
 iris.create()
-iris.simulate(outputHistory=True)
+
+Gamma, pi = iris.solve()
+print("Gamma:")
+print(Gamma)
+print("pi:")
+print(pi)
+
+iris.simulate(Gamma, pi, outputHistory=True)
 iris.train()
 iris.test()
-print(iris)
+#print(iris)
 
-#Gamma, pi = iris.solve()
-#print(Gamma)
-#print(pi)
 
