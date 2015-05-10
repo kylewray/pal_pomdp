@@ -40,9 +40,13 @@ print(Gamma)
 print("pi:")
 print(pi)
 
-iris.simulate(Gamma, pi, outputHistory=True)
-iris.train()
-iris.test()
+ylabels = iris.simulate(Gamma, pi, outputHistory=True)
+palPOMDPAccuracy = iris.train(ylabels)
+truthAccuracy = iris.truth()
+print("K-Nearest Neighbors Accuracy [Proactively Learned Train Labels]:", palPOMDPAccuracy)
+print("K-Nearest Neighbors Accuracy [True Train Labels]:", truthAccuracy)
+
+#iris.test()
 #print(iris)
 
 
