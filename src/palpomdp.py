@@ -34,12 +34,14 @@ import random as rnd
 import itertools as it
 
 from sklearn.neighbors import KNeighborsClassifier
+from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier
-from sklearn.naive_bayes import GaussianNB
-from sklearn.lda import LDA
-from sklearn.qda import QDA
+
+#from sklearn.tree import DecisionTreeClassifier
+#from sklearn.ensemble import RandomForestClassifier
+#from sklearn.naive_bayes import GaussianNB
+#from sklearn.lda import LDA
+#from sklearn.qda import QDA
 
 
 class PALPOMDP(MOPOMDP):
@@ -120,7 +122,7 @@ class PALPOMDP(MOPOMDP):
             self.initialIndexes = np.array([int(data[rowOffset][idp]) for idp in range(self.initialSize)])
 
             rowOffset = 2
-            self.testIndexes = np.array([int(data[rowOffset][idp]) for idp in range(self.initialSize)])
+            self.testIndexes = np.array([int(data[rowOffset][idp]) for idp in range(self.testSize)])
 
             rowOffset = 3
             colOffset = 1
@@ -139,6 +141,58 @@ class PALPOMDP(MOPOMDP):
         except Exception:
             print("Failed to load file '%s'." % (filename))
             raise Exception()
+
+    def _compute_reward(self, s, a, dataPointIndex):
+        """ Compute the reward based on the oracle cost, the budget, and some measure of the value of information.
+
+            Parameters:
+                s               --  The state index.
+                a               --  The action index.
+                dataPointIndex  --  The data point index.
+
+            Returns:
+                The reward which combines a number of variables.
+        """
+
+        # Split apart the features and class labels.
+        nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != self.classIndex]
+        dataset = self.dataset[:, nonClassIndexes]
+        labels = self.dataset[:, self.classIndex]
+
+        # Create the initial training subset of the data.
+        Xinitial = dataset[self.initialIndexes, :]
+        yinitial = labels[self.initialIndexes]
+
+        # Create the training subset of the data. This is what we are building the PAL POMDP to operate over.
+        # We need to use the data, without any labels of course, to determine the 'value of information' component
+        # of the reward. This is based on the 'estimated uncertainty of the current learning function.'
+        Xtrain = dataset[self.trainIndexes, :]
+
+        #c = LogisticRegression(C=1e5)
+        #c.fit(Xinitial, yinitial)
+        #voi = c.predict_proba(Xtrain)
+        #print("VOI [LR]:\n", voi)
+        #c = SVC(kernel='rbf', max_iter=1000, probability=True)
+        #c.fit(Xinitial, yinitial)
+        #voi = c.predict_proba(Xtrain)
+        #print("VOI [SVM]:\n", voi)
+        #raise Exception()
+
+        # Train using k-nearest neighbors, logistic regression, or an SVM.
+        if self.classifier == 'logistic_regression':
+            c = LogisticRegression(C=1e5)
+            c.fit(Xinitial, yinitial)
+            prob = c.predict_proba(Xtrain)
+
+            return -self.CostOracle[dataPointIndex, a]
+        elif self.classifier == 'svm':
+            c = SVC(kernel='rbf', max_iter=1000, probability=True)
+            c.fit(Xinitial, yinitial)
+            prob = c.predict_proba(Xtrain)[dataPointIndex, :]
+
+            return -self.CostOracle[dataPointIndex, a]
+        else:
+            return -self.CostOracle[dataPointIndex, a]
 
     def create(self):
         """ Create the POMDP once the oracles and their probabilities have been defined. """
@@ -259,7 +313,7 @@ class PALPOMDP(MOPOMDP):
                 continue
 
             for a, action in enumerate(self.actions):
-                self.R[0][s][a] = -self.CostOracle[dataPointIndex, a]
+                self.R[0][s][a] = self._compute_reward(s, a, dataPointIndex)
 
         self.R = np.array(self.R)
 
@@ -346,7 +400,7 @@ class PALPOMDP(MOPOMDP):
             # Transition the state!
             s = sp
 
-        return ylabels
+        return np.array(ylabels)
 
     def train(self, ytrain):
         """ Train the final classifier after a simulation has generated a history of actions and observations.
@@ -369,16 +423,25 @@ class PALPOMDP(MOPOMDP):
         # We do not have these anymore to train. We only have what was simulated as part of the PAL POMDP policy.
         #ytrain = labels[self.trainIndexes]
 
-        # Train using k-nearest neighbors.
-        knn = KNeighborsClassifier(5)
-        knn.fit(Xtrain, ytrain)
+        # Train using k-nearest neighbors, logistic regression, or an SVM.
+        c = None
+        if self.classifier == 'knn':
+            c = KNeighborsClassifier(5)
+        elif self.classifier == 'logistic_regression':
+            c = LogisticRegression(C=1e5)
+        elif self.classifier == 'svm':
+            c = SVC(kernel='rbf', max_iter=1000)
+        else:
+            print("Error: Invalid classifier '%s'." % (self.classifier))
+            raise Exception()
+        c.fit(Xtrain, ytrain)
 
         # Create the test set.
         Xtest = dataset[self.testIndexes, :]
         ytest = labels[self.testIndexes]
 
         # Predict for each of these.
-        yprediction = knn.predict(Xtest)
+        yprediction = c.predict(Xtest)
 
         # Compute accuracy!
         accuracy = np.sum(ytest == yprediction) / ytest.size
@@ -386,7 +449,11 @@ class PALPOMDP(MOPOMDP):
         return accuracy
 
     def truth(self):
-        """ Train a classifier using the *true* labels to compare the accuracy. """
+        """ Train a classifier using the *true* labels to compare the accuracy.
+
+            Returns:
+                The accuracy of the model.
+        """
 
         labels = self.dataset[:, self.classIndex]
         ytrain = labels[self.trainIndexes]

@@ -25,6 +25,8 @@ import numpy as np
 import random as rnd
 
 
+from sklearn.linear_model import LogisticRegression
+
 #from sklearn.neighbors import KNeighborsClassifier
 #from sklearn.svm import SVC
 #from sklearn.tree import DecisionTreeClassifier
@@ -37,7 +39,7 @@ import random as rnd
 NUM_ORACLES = 4
 
 
-def oracle_values(labeledDataset, dataPoint):
+def oracle_values_random(labeledDataset, dataPoint):
     """ Return a string of the oracle values for the data point given.
 
         Parameters:
@@ -118,7 +120,7 @@ def gen_pal(inputDataFile, outputPALFile, classIndex, classifier, initialSize, t
         # Next, for each data point, define the probabilities and costs associated with each oracle.
         for dataPointIndex in train:
             dataPoint = dataset[dataPointIndex, nonClassIndexes]
-            f.write("\n%i,%s" % (dataPointIndex, oracle_values(dataset[initial, :], dataPoint)))
+            f.write("\n%i,%s" % (dataPointIndex, oracle_values_random(dataset[initial, :], dataPoint)))
 
 
 if __name__ == "__main__":
