@@ -26,17 +26,13 @@ import random as rnd
 
 
 from sklearn.linear_model import LogisticRegression
+from sklearn.svm import SVC
 
-#from sklearn.neighbors import KNeighborsClassifier
-#from sklearn.svm import SVC
-#from sklearn.tree import DecisionTreeClassifier
-#from sklearn.ensemble import RandomForestClassifier
-#from sklearn.naive_bayes import GaussianNB
-#from sklearn.lda import LDA
-#from sklearn.qda import QDA
+from sklearn.cluster import KMeans
 
 
 NUM_ORACLES = 4
+BASE_ORACLE_COST = 1.0 / 3.0
 
 
 def oracle_values_random(labeledDataset, dataPoint):
@@ -52,17 +48,56 @@ def oracle_values_random(labeledDataset, dataPoint):
 
     oracleValues = ""
 
-    # All Scenarios: The normal oracle.
-    oracleValues += "%.2f,%.2f,%.2f," % (rnd.uniform(0.8, 0.9), rnd.uniform(0.8, 0.9), 1.0)
+    # All Scenarios: The normal ("awesome") oracle.
+    oracleValues += "%.2f,%.2f,%.2f," % (rnd.uniform(0.8, 0.9), rnd.uniform(0.8, 0.9), BASE_ORACLE_COST)
 
     # Scenario #1: The reluctant oracle.
-    oracleValues += "%.2f,%.2f,%.2f," % (rnd.uniform(0.9, 1.0), rnd.uniform(0.6, 0.8), 1.0 / 3.0)
+    oracleValues += "%.2f,%.2f,%.2f," % (rnd.uniform(0.9, 1.0), rnd.uniform(0.6, 0.8), BASE_ORACLE_COST / 3.0)
 
     # Scenario #2: The imprecise oracle.
-    oracleValues += "%.2f,%.2f,%.2f," % (rnd.uniform(0.7, 0.8), rnd.uniform(0.9, 1.0), 1.0 / 3.0)
+    oracleValues += "%.2f,%.2f,%.2f," % (rnd.uniform(0.7, 0.8), rnd.uniform(0.9, 1.0), BASE_ORACLE_COST / 3.0)
 
     # Scenario #3: The varying (data point sensitive) oracle.
-    oracleValues += "%.2f,%.2f,%.2f" % (rnd.uniform(0.8, 0.9), rnd.uniform(0.8, 0.9), rnd.uniform(1.0 / 3.0, 3.0))
+    oracleValues += "%.2f,%.2f,%.2f" % (rnd.uniform(0.8, 0.9), rnd.uniform(0.8, 0.9), rnd.uniform(BASE_ORACLE_COST / 3.0, BASE_ORACLE_COST * 3.0))
+
+    return oracleValues
+
+
+def oracle_values_cluster(dataset, labels, dataPointClusterDistance, maxClusterDistance, classifier):
+    """ Return a string of the oracle values for the data point given.
+
+        Parameters:
+            dataset     --  The features of the small subset of the dataset which we have initially labeled.
+            labels      --  The labels of the small subset of the dataset which we have initially labeled.
+            numClasses  --  The number of classes in the dataset; used to set how many clusters there are.
+            dataPoint   --  One of the data points which we have *not* yet labeled. (No label given here; just features.)
+            classifier  --  The type of classifier to use for computing initial probabilities.
+
+        Returns:
+            The string of all the oracles' values.
+    """
+
+    COST_RATIO = 1.0 / 3.0
+
+    PrAnswer = None
+
+    PrCorrect = None
+
+    CostNonUniform = None
+
+    oracleValues = ""
+
+    # All Scenarios: The normal ("awesome") oracle.
+    oracleValues += "%.2f,%.2f,%.2f," % (1.0, 1.0, BASE_ORACLE_COST)
+
+    # Scenario #1: The reluctant oracle.
+    oracleValues += "%.2f,%.2f,%.2f," % (1.0, PrAnswer, BASE_ORACLE_COST * COST_RATIO))
+
+    # Scenario #2: The imprecise oracle.
+    oracleValues += "%.2f,%.2f,%.2f," % (PrCorrect, 1.0, BASE_ORACLE_COST * COST_RATIO))
+
+    # Scenario #3: The varying (data point sensitive) oracle.
+    oracleValues += "%.2f,%.2f,%.2f" % (1.0, 1.0, CostNonUniform))
 
     return oracleValues
 
@@ -117,10 +152,19 @@ def gen_pal(inputDataFile, outputPALFile, classIndex, classifier, initialSize, t
         f.write(",".join(map(str, initial)) + "\n")
         f.write(",".join(map(str, test)))
 
+        # Method #2: Use a cluster method for the oracle value probability estimates.
+        #cluster = KMeans(k=numClasses)
+        #cluster.fit(dataset[initial, nonClassIndexes])
+
         # Next, for each data point, define the probabilities and costs associated with each oracle.
         for dataPointIndex in train:
             dataPoint = dataset[dataPointIndex, nonClassIndexes]
+
+            # Method #1: Use reasonable random values.
             f.write("\n%i,%s" % (dataPointIndex, oracle_values_random(dataset[initial, :], dataPoint)))
+
+            # Method #2: Use clustering to estimate reasonable probabilities.
+            #f.write("\n%i,%s" % (dataPointIndex, oracle_values_cluster(dataset[initial, :], dataPoint)))
 
 
 if __name__ == "__main__":

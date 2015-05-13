@@ -30,18 +30,13 @@ from nova.pomdp import *
 
 import csv
 import numpy as np
+import numpy.linalg as npla
 import random as rnd
 import itertools as it
 
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
-
-#from sklearn.tree import DecisionTreeClassifier
-#from sklearn.ensemble import RandomForestClassifier
-#from sklearn.naive_bayes import GaussianNB
-#from sklearn.lda import LDA
-#from sklearn.qda import QDA
 
 
 class PALPOMDP(MOPOMDP):
@@ -76,6 +71,9 @@ class PALPOMDP(MOPOMDP):
         self.PrCorrect = None # Pr(correct | data point, oracle) as 2-d array.
         self.PrAnswer = None # Pr(answer | data point, oracle) as 2-d array.
         self.CostOracle = None # C(data point, oracle) as 2-d array.
+
+        # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
+        self.tUWD = 1.0
 
     def load(self, filename):
         """ Load a PAL file, containing the oracle and dataset information.
@@ -142,13 +140,39 @@ class PALPOMDP(MOPOMDP):
             print("Failed to load file '%s'." % (filename))
             raise Exception()
 
+    def _entropy(self, Pr):
+        """ Compute the entropy of the probability given.
+
+            Parameters:
+                Pr  --  The probability, as a 1-d numpy array.
+
+            Returns:
+                The entropy of the probability.
+        """
+
+        return -sum([Pr[y] * np.log(Pr[y]) for y in range(Pr.shape[0])])
+
+    def _uncertainty_weighted_density(self, dataPointIndex, PryGxw):
+        """ Compute the uncertainty weighted density given the data point.
+
+            Parameters:
+                dataPointIndex  --  The data point index, from trainIndexes.
+                PryGxw          --  Pr(y | x, w) is the probability of each label for this data point.
+
+            Returns:
+                The uncertainty weighted density of the data point provided.
+        """
+
+        Nx = [i for i in self.trainIndexes if npla.norm(self.dataset[i, :] - self.dataset[dataPointIndex, :]) < self.tUWD]
+        return sum([np.exp(-pow(npla.norm(self.dataset[dataPointIndex, :] - self.dataset[k, :]), 2)) * self._entropy(PryGxw) for k in Nx])
+
     def _compute_reward(self, s, a, dataPointIndex):
         """ Compute the reward based on the oracle cost, the budget, and some measure of the value of information.
 
             Parameters:
                 s               --  The state index.
                 a               --  The action index.
-                dataPointIndex  --  The data point index.
+                dataPointIndex  --  The data point index, from trainIndexes.
 
             Returns:
                 The reward which combines a number of variables.
@@ -168,31 +192,21 @@ class PALPOMDP(MOPOMDP):
         # of the reward. This is based on the 'estimated uncertainty of the current learning function.'
         Xtrain = dataset[self.trainIndexes, :]
 
-        #c = LogisticRegression(C=1e5)
-        #c.fit(Xinitial, yinitial)
-        #voi = c.predict_proba(Xtrain)
-        #print("VOI [LR]:\n", voi)
-        #c = SVC(kernel='rbf', max_iter=1000, probability=True)
-        #c.fit(Xinitial, yinitial)
-        #voi = c.predict_proba(Xtrain)
-        #print("VOI [SVM]:\n", voi)
-        #raise Exception()
-
         # Train using k-nearest neighbors, logistic regression, or an SVM.
         if self.classifier == 'logistic_regression':
             c = LogisticRegression(C=1e5)
             c.fit(Xinitial, yinitial)
-            prob = c.predict_proba(Xtrain)
+            PryGxw = c.predict_proba(Xtrain)[dataPointIndex, :]
 
-            return -self.CostOracle[dataPointIndex, a]
+            return self._uncertainty_weighted_density(dataPointIndex, PryGxw) / self.CostOracle[dataPointIndex, a]
         elif self.classifier == 'svm':
             c = SVC(kernel='rbf', max_iter=1000, probability=True)
             c.fit(Xinitial, yinitial)
-            prob = c.predict_proba(Xtrain)[dataPointIndex, :]
+            PryGxw = c.predict_proba(Xtrain)[dataPointIndex, :]
 
-            return -self.CostOracle[dataPointIndex, a]
+            return self._uncertainty_weighted_density(dataPointIndex, PryGxw) / self.CostOracle[dataPointIndex, a]
         else:
-            return -self.CostOracle[dataPointIndex, a]
+            return 1.0 / self.CostOracle[dataPointIndex, a]
 
     def create(self):
         """ Create the POMDP once the oracles and their probabilities have been defined. """
@@ -458,19 +472,6 @@ class PALPOMDP(MOPOMDP):
         labels = self.dataset[:, self.classIndex]
         ytrain = labels[self.trainIndexes]
         return self.train(ytrain)
-
-
-#classifiers = [KNeighborsClassifier(3),
-#                KNeighborsClassifier(5),
-#                SVC(kernel="linear", max_iter=1000),
-#                SVC(kernel="poly", max_iter=1000),
-#                SVC(kernel="rbf", max_iter=1000),
-#                DecisionTreeClassifier(max_depth=5),
-#                RandomForestClassifier(max_depth=5, n_estimators=10, max_features=1),
-#                GaussianNB(),
-#                LDA(),
-#                QDA()]
-
 
     def test(self):
         """ Test the accuracy of the final classifier once it has been trained. """
