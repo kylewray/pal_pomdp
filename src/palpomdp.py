@@ -79,7 +79,7 @@ class PALPOMDP(MOPOMDP):
         """ Load a PAL file, containing the oracle and dataset information.
 
             Parameters:
-                filename        --  The name and path of the file to load.
+                filename    --  The name and path of the file to load.
         """
 
         # Load all the data into this object.
