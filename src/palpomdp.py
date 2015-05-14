@@ -425,65 +425,65 @@ class PALPOMDP(MOPOMDP):
 
         return np.array(ylabels)
 
-    def train(self, ytrain):
-        """ Train the final classifier after a simulation has generated a history of actions and observations.
-
-            Parameters:
-                ytrain  --  The proactively learned train labels.
-
-            Returns:
-                The accuracy of the model.
-        """
-
-        # Split apart the features and class labels.
-        nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != self.classIndex]
-        dataset = self.dataset[:, nonClassIndexes]
-        labels = self.dataset[:, self.classIndex]
-
-        # Create the training subset of the data.
-        Xtrain = dataset[self.trainIndexes, :]
-
-        # We do not have these anymore to train. We only have what was simulated as part of the PAL POMDP policy.
-        #ytrain = labels[self.trainIndexes]
-
-        # Train using k-nearest neighbors, logistic regression, or an SVM.
-        c = None
-        if self.classifier == 'knn':
-            c = KNeighborsClassifier(5)
-        elif self.classifier == 'logistic_regression':
-            c = LogisticRegression(C=1e5)
-        elif self.classifier == 'svm':
-            c = SVC(kernel='rbf', max_iter=1000)
-        else:
-            print("Error: Invalid classifier '%s'." % (self.classifier))
-            raise Exception()
-        c.fit(Xtrain, ytrain)
-
-        # Create the test set.
-        Xtest = dataset[self.testIndexes, :]
-        ytest = labels[self.testIndexes]
-
-        # Predict for each of these.
-        yprediction = c.predict(Xtest)
-
-        # Compute accuracy!
-        accuracy = np.sum(ytest == yprediction) / ytest.size
-
-        return accuracy
-
-    def truth(self):
-        """ Train a classifier using the *true* labels to compare the accuracy.
-
-            Returns:
-                The accuracy of the model.
-        """
-
-        labels = self.dataset[:, self.classIndex]
-        ytrain = labels[self.trainIndexes]
-        return self.train(ytrain)
-
-    def test(self):
-        """ Test the accuracy of the final classifier once it has been trained. """
-
-        pass
+#    def train(self, ytrain):
+#        """ Train the final classifier after a simulation has generated a history of actions and observations.
+#
+#            Parameters:
+#                ytrain  --  The proactively learned train labels.
+#
+#            Returns:
+#                The accuracy of the model.
+#        """
+#
+#        # Split apart the features and class labels.
+#        nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != self.classIndex]
+#        dataset = self.dataset[:, nonClassIndexes]
+#        labels = self.dataset[:, self.classIndex]
+#
+#        # Create the training subset of the data.
+#        Xtrain = dataset[self.trainIndexes, :]
+#
+#        # We do not have these anymore to train. We only have what was simulated as part of the PAL POMDP policy.
+#        #ytrain = labels[self.trainIndexes]
+#
+#        # Train using k-nearest neighbors, logistic regression, or an SVM.
+#        c = None
+#        if self.classifier == 'knn':
+#            c = KNeighborsClassifier(5)
+#        elif self.classifier == 'logistic_regression':
+#            c = LogisticRegression(C=1e5)
+#        elif self.classifier == 'svm':
+#            c = SVC(kernel='rbf', max_iter=1000)
+#        else:
+#            print("Error: Invalid classifier '%s'." % (self.classifier))
+#            raise Exception()
+#        c.fit(Xtrain, ytrain)
+#
+#        # Create the test set.
+#        Xtest = dataset[self.testIndexes, :]
+#        ytest = labels[self.testIndexes]
+#
+#        # Predict for each of these.
+#        yprediction = c.predict(Xtest)
+#
+#        # Compute accuracy!
+#        accuracy = np.sum(ytest == yprediction) / ytest.size
+#
+#        return accuracy
+#
+#    def truth(self):
+#        """ Train a classifier using the *true* labels to compare the accuracy.
+#
+#            Returns:
+#                The accuracy of the model.
+#        """
+#
+#        labels = self.dataset[:, self.classIndex]
+#        ytrain = labels[self.trainIndexes]
+#        return self.train(ytrain)
+#
+#    def test(self):
+#        """ Test the accuracy of the final classifier once it has been trained. """
+#
+#        pass
 

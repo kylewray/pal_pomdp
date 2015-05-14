@@ -183,7 +183,7 @@ class Oracle(object):
         # If the function made it here, then return the correct label and the cost.
         return int(self.labels[dataPointIndex]), self.costs[dataPointIndex]
 
-    def query_cost(self, dataPointIndex):
+    def get_cost(self, dataPointIndex):
         """ Return how much a particular data point will cost to label.
 
             Parameters:

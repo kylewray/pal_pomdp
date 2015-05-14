@@ -98,7 +98,7 @@ class PAL(object):
 
         # It is free to query for the costs, so just ask the oracle how much each data point is.
         for i in range(self.numDataPoints):
-            self.Cost[i, oracleIndex] = oracle.query_cost(i)
+            self.Cost[i, oracleIndex] = oracle.get_cost(i)
 
         # Compute the average cost for this oracle.
         Cavg = self.Cost[:, oracleIndex].sum() / float(self.numDataPoints)
@@ -130,7 +130,7 @@ class PAL(object):
             distance = cpts[0][1]
 
             # If the cost would put us above the budget, terminate.
-            if C + oracle.query_cost(dataPointIndex) > Bc:
+            if C + oracle.get_cost(dataPointIndex) > Bc:
                 break
 
             # Query the oracle to obtain that delicious beautiful data.
@@ -197,23 +197,80 @@ class PAL(object):
 
         return C
 
-    def labeled_dataset(self):
+    def get_labeled_dataset(self):
         """ Get the labeled dataset and its labels.
 
             Returns:
                 The labeled dataset and the corresponding labels, as 2-d and 1-d numpy arrays, respectively.
         """
 
-        return self.dataset[self.L, :], self.labels[self.L]
+        return self.dataset[self.L, :].copy(), self.labels[self.L].copy()
 
-    def unlabeled_dataset(self):
+    def get_unlabeled_dataset(self):
         """ Get the unlabeled dataset.
 
             Returns:
                 The unlabeled dataset as a 2-d numpy array.
         """
 
-        return self.dataset[self.UL, :]
+        return self.dataset[self.UL, :].copy()
+
+    def get_labeled_data_point_indexes(self):
+        """ Get the labeled data point indexes.
+
+            Returns:
+                The labeled data point indexes.
+        """
+
+        return np.array(self.L)
+
+    def get_unlabeled_data_point_indexes(self):
+        """ Get the unlabeled data point indexes.
+
+            Returns:
+                The unlabeled data point indexes.
+        """
+
+        return np.array(self.UL)
+
+    def get_pr_answer(self, dataPointIndex, oracleIndex):
+        """ Get the probability that an oracle answers for a particular data point.
+
+            Parameters:
+                dataPointIndex  --  The data point index in the entire dataset.
+                oracle          --  The oracle index.
+
+            Returns:
+                The probability that this oracle responds at all.
+        """
+
+        return self.PrAnswer[dataPointIndex, oracleIndex]
+
+    def get_pr_correct(self, dataPointIndex, oracleIndex):
+        """ Get the probability that an oracle is correct for a particular data point.
+
+            Parameters:
+                dataPointIndex  --  The data point index in the entire dataset.
+                oracle          --  The oracle index.
+
+            Returns:
+                The probability that this oracle is going to respond with the correct label.
+        """
+
+        return self.PrCorrect[dataPointIndex, oracleIndex]
+
+    def get_cost(self, dataPointIndex, oracleIndex):
+        """ Get the cost for querying an oracle with a particular data point.
+
+            Parameters:
+                dataPointIndex  --  The data point index in the entire dataset.
+                oracle          --  The oracle index.
+
+            Returns:
+                The cost for asking the oracle to label a data point.
+        """
+
+        return self.Cost[dataPointIndex, oracleIndex]
 
 
 if __name__ == "__main__":
