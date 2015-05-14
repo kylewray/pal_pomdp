@@ -39,6 +39,15 @@ from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 
 
+# NOTE: THE IDEA FOR THE REWRITE IS THAT THIS OBJECT IS ONLY GIVEN THE *ENTIRE DATASET WITHOUT LABELS*.
+# Use the 'pal.py' to initialize everything shared by all Proactive Learners.
+
+# TODO: REMOVE 'simulate', 'train', and 'truth' from this class. These will go in a 'simulation.py' class
+# which will execute PALPOMDP's *policy* (which needs an external interface). Then, I can make a 'original_pal.py'
+# that implements the 'scenario_1_pal.py', 'scenario_2_pal.py', and 'scenario_3_pal.py' with the same interface
+# to obtain which oracle to label which data point. This will let me put all the statistics in 'simulation.py'.
+
+
 class PALPOMDP(MOPOMDP):
     """ A class which contains oracles. """
 

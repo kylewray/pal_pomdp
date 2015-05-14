@@ -34,7 +34,7 @@ ORACLE_UNCERTAINTY_THRESHOLD = 0.7
 class Oracle(object):
     """ An oracle class which has the *true* probabilities, and is able to simulate them given a data point. """
 
-    def __init__(self, datasetFile, classIndex, reluctant=False, fallible=False, variedCosts=False,
+    def __init__(self, datasetFile, classIndex, paymentCallback, reluctant=False, fallible=False, variedCosts=False,
                 dataSubset=ORACLE_DATA_SUBSET, uncertaintyThreshold=ORACLE_UNCERTAINTY_THRESHOLD,
                 defaultCost=ORACLE_DEFAULT_COST, costRatio=ORACLE_DEFAULT_COST_RATIO):
         """ The constructor of the Oracle.
@@ -42,6 +42,7 @@ class Oracle(object):
             Parameters:
                 datasetFile             --  The filename and path of the dataset to use.
                 classIndex              --  The class index within the dataset matrix.
+                paymentCallback         --  The function to call when this oracle is queried. This 'pays' the cost.
                 reluctant               --  This oracle varies in its ability to answer. Default is False.
                 fallible                --  This oracle varies in its ability to answer correctly. Default
                                             is False.
@@ -55,7 +56,7 @@ class Oracle(object):
                                             Default is ORACLE_DEFAULT_COST_RATIO.
         """
 
-        self.classifier = None
+        self.paymentCallback = paymentCallback
 
         # Load the dataset.
         self.dataset = np.genfromtxt(datasetFile, delimiter=',')
@@ -74,15 +75,21 @@ class Oracle(object):
         else:
             self.failToAnswer = None
 
+        self.reluctant = reluctant
+
         if fallible:
             self.randomClass = self._random_train(dataSubset, uncertaintyThreshold)
             cost *= costRatio
         else:
             self.randomClass = None
 
+        self.fallible = fallible
+
         self.costs = np.array([cost for i in range(self.numDataPoints)])
         if variedCosts:
             self._compute_varied_costs(dataSubset, defaultCost)
+
+        self.variedCosts = variedCosts
 
     def _random_train(self, dataSubset, uncertaintyThreshold):
         """ Randomly train on a subset of the data, and find indexes within the specified uncertainty probability range.
@@ -161,6 +168,9 @@ class Oracle(object):
                 cost    --  The cost of this query.
         """
 
+        # Pay the cost for querying this oracle.
+        self.paymentCallback(self.costs[dataPointIndex])
+
         # First, see if the oracle answers at all based on the data point being in the 'blacklist'.
         if self.failToAnswer != None and dataPointIndex in self.failToAnswer:
             return None, self.costs[dataPointIndex]
@@ -173,14 +183,29 @@ class Oracle(object):
         # If the function made it here, then return the correct label and the cost.
         return int(self.labels[dataPointIndex]), self.costs[dataPointIndex]
 
+    def query_cost(self, dataPointIndex):
+        """ Return how much a particular data point will cost to label.
+
+            Parameters:
+                dataPointIndex  --  The index of the data point within the dataset.
+
+            Returns:
+                The cost of the query.
+        """
+
+        return self.costs[dataPointIndex]
+
 
 if __name__ == "__main__":
     print("Performing Oracle Unit Test...")
 
-    oracles = [Oracle("../experiments/iris/iris.data", 4),
-                Oracle("../experiments/iris/iris.data", 4, reluctant=True),
-                Oracle("../experiments/iris/iris.data", 4, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, variedCosts=True)]
+    Ctotal = 0.0
+    paymentCallback = lambda c: print("Cost %.2f" % (c))
+
+    oracles = [Oracle("../experiments/iris/iris.data", 4, paymentCallback),
+                Oracle("../experiments/iris/iris.data", 4, paymentCallback, reluctant=True),
+                Oracle("../experiments/iris/iris.data", 4, paymentCallback, fallible=True),
+                Oracle("../experiments/iris/iris.data", 4, paymentCallback, variedCosts=True)]
 
     for i in range(150):
         for oi, o in enumerate(oracles):
