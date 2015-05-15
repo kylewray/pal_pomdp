@@ -20,6 +20,54 @@
     CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE SOFTWARE.
 """
 
-class PALOriginal(object):
-    pass
+class PALOriginalScenario1(object):
+    def __init__(self):
+        pass
+
+    def create(self):
+        pass
+
+    def select(self):
+        return None, None
+
+    def update(self, label, cost):
+        pass
+
+    def finish(self):
+        return None, None
+
+
+class PALOriginalScenario2(object):
+    def __init__(self):
+        pass
+
+    def create(self):
+        pass
+
+    def select(self):
+        return None, None
+
+    def update(self, label, cost):
+        pass
+
+    def finish(self):
+        return None, None
+
+
+class PALOriginalScenario3(object):
+    def __init__(self):
+        pass
+
+    def create(self):
+        pass
+
+    def select(self):
+        return None, None
+
+    def update(self, label, cost):
+        pass
+
+    def finish(self):
+        return None, None
+
 

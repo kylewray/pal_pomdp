@@ -22,19 +22,21 @@
 
 import random as rnd
 import numpy as np
+
 from sklearn.linear_model import LogisticRegression
 
 
-ORACLE_DEFAULT_COST = 1.0 / 3.0
-ORACLE_DEFAULT_COST_RATIO = 1.0 / 3.0
+ORACLE_DEFAULT_COST = 0.5
+ORACLE_DEFAULT_COST_RATIO = 0.75
+#ORACLE_MIN_COST = ORACLE_DEFAULT_COST * ORACLE_DEFAULT_COST_RATIO * ORACLE_DEFAULT_COST_RATIO
 ORACLE_DATA_SUBSET = 0.05
-ORACLE_UNCERTAINTY_THRESHOLD = 0.7
+ORACLE_UNCERTAINTY_THRESHOLD = 0.75
 
 
 class Oracle(object):
     """ An oracle class which has the *true* probabilities, and is able to simulate them given a data point. """
 
-    def __init__(self, datasetFile, classIndex, paymentCallback, reluctant=False, fallible=False, variedCosts=False,
+    def __init__(self, datasetFile, classIndex, mapping, reluctant=False, fallible=False, variedCosts=False,
                 dataSubset=ORACLE_DATA_SUBSET, uncertaintyThreshold=ORACLE_UNCERTAINTY_THRESHOLD,
                 defaultCost=ORACLE_DEFAULT_COST, costRatio=ORACLE_DEFAULT_COST_RATIO):
         """ The constructor of the Oracle.
@@ -42,7 +44,7 @@ class Oracle(object):
             Parameters:
                 datasetFile             --  The filename and path of the dataset to use.
                 classIndex              --  The class index within the dataset matrix.
-                paymentCallback         --  The function to call when this oracle is queried. This 'pays' the cost.
+                mapping                 --  Maps indexes of Xtrain to those of the true dataset.
                 reluctant               --  This oracle varies in its ability to answer. Default is False.
                 fallible                --  This oracle varies in its ability to answer correctly. Default
                                             is False.
@@ -56,7 +58,7 @@ class Oracle(object):
                                             Default is ORACLE_DEFAULT_COST_RATIO.
         """
 
-        self.paymentCallback = paymentCallback
+        self.mapping = list(mapping)
 
         # Load the dataset.
         self.dataset = np.genfromtxt(datasetFile, delimiter=',')
@@ -87,7 +89,7 @@ class Oracle(object):
 
         self.costs = np.array([cost for i in range(self.numDataPoints)])
         if variedCosts:
-            self._compute_varied_costs(dataSubset, defaultCost)
+            self._compute_varied_costs(dataSubset, defaultCost, costRatio)
 
         self.variedCosts = variedCosts
 
@@ -125,12 +127,13 @@ class Oracle(object):
         # within the threshold.
         return [i for i in range(self.numDataPoints) if max([Pr[i, j] for j in range(self.numClasses)]) < uncertaintyThreshold]
 
-    def _compute_varied_costs(self, dataSubset, defaultCost):
+    def _compute_varied_costs(self, dataSubset, defaultCost, costRatio):
         """ Compute the varied costs as a function of the data points.
 
             Parameters:
                 dataSubset      --  The proportion of the dataset to randomly train on, prior to returning the indexes.
                 defaultCost     --  The default cost of the oracle.
+                costRatio       --  The ratio reducing cost for each used in the set {reluctant, fallible}.
         """
 
         # Select the random subset on which this oracle is trained.
@@ -153,23 +156,30 @@ class Oracle(object):
 
         # Return the set of indexes, over the entire dataset, which have a predicted probability
         # within the threshold.
+        #self.costs = np.array([max(ORACLE_MIN_COST, 1.0 - (max([Pr[i, j] for j in range(self.numClasses)]) - \
+        #                                1.0 / self.numClasses) / (1.0 - 1.0 / self.numClasses)) \
+        #                            for i in range(self.numDataPoints)])
+
+        oracleMinCost = defaultCost * costRatio * costRatio
+
         self.costs = np.array([1.0 - (max([Pr[i, j] for j in range(self.numClasses)]) - \
-                                        1.0 / self.numClasses) / (1.0 - 1.0 / self.numClasses) \
+                                        1.0 / self.numClasses) / (1.0 - 1.0 / self.numClasses) + oracleMinCost \
                                     for i in range(self.numDataPoints)])
+
+        #print("\n".join(["%.3f" % (c) for c in self.costs]))
 
     def query(self, dataPointIndex):
         """ Return the oracle's response to the data point, as well as the corresponding cost.
 
             Parameters:
-                dataPointIndex  --  The index of the data point within the dataset.
+                dataPointIndex  --  The index of the data point within the Xtrain dataset.
 
             Returns:
                 label   --  The label in {0, .., numClasses}, or None if no response.
                 cost    --  The cost of this query.
         """
 
-        # Pay the cost for querying this oracle.
-        self.paymentCallback(self.costs[dataPointIndex])
+        dataPointIndex = self.mapping[dataPointIndex]
 
         # First, see if the oracle answers at all based on the data point being in the 'blacklist'.
         if self.failToAnswer != None and dataPointIndex in self.failToAnswer:
@@ -187,30 +197,30 @@ class Oracle(object):
         """ Return how much a particular data point will cost to label.
 
             Parameters:
-                dataPointIndex  --  The index of the data point within the dataset.
+                dataPointIndex  --  The index of the data point within the Xtrain dataset.
 
             Returns:
                 The cost of the query.
         """
 
+        dataPointIndex = self.mapping[dataPointIndex]
         return self.costs[dataPointIndex]
 
 
 if __name__ == "__main__":
     print("Performing Oracle Unit Test...")
 
-    Ctotal = 0.0
-    paymentCallback = lambda c: print("Cost %.2f" % (c))
+    mapping = range(150)
 
-    oracles = [Oracle("../experiments/iris/iris.data", 4, paymentCallback),
-                Oracle("../experiments/iris/iris.data", 4, paymentCallback, reluctant=True),
-                Oracle("../experiments/iris/iris.data", 4, paymentCallback, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, paymentCallback, variedCosts=True)]
+    oracles = [Oracle("../experiments/iris/iris.data", 4, mapping),
+                Oracle("../experiments/iris/iris.data", 4, mapping, reluctant=True),
+                Oracle("../experiments/iris/iris.data", 4, mapping, fallible=True),
+                Oracle("../experiments/iris/iris.data", 4, mapping, variedCosts=True)]
 
     for i in range(150):
         for oi, o in enumerate(oracles):
             y, c = o.query(i)
-            print("o%i: %s %.3f   " % (oi, str(y), c), end='')
+            print("Oracle %i: %s\t%.3f\t\t" % (oi + 1, str(y), c), end='')
         print()
 
     print("Done.")

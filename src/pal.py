@@ -40,11 +40,12 @@ def sigmoid(x):
 class PAL(object):
     """ A Proactive Learner (PAL) class to handle initialization of oracle probabilities and costs. """
 
-    def __init__(self, dataset, oracles, Bc):
+    def __init__(self, dataset, numClasses, oracles, Bc):
         """ The constructor for the PAL object, setting up variables given the dataset and oracles.
 
             Parameters:
                 dataset     --  The complete dataset without labels. (No labels are included; must query oracles.)
+                numClasses  --  The number of classes.
                 oracles     --  A list of the Oracle objects to use.
                 Bc          --  A list of budgets for how much we can spend for each oracle in initial clustering.
         """
@@ -53,12 +54,18 @@ class PAL(object):
         self.numDataPoints = self.dataset.shape[0]
         self.numOracles = len(oracles)
 
+        self.reluctantOracles = [i for i, o in enumerate(oracles) if o.reluctant]
+        self.fallibleOracles = [i for i, o in enumerate(oracles) if o.fallible]
+        self.variedCostsOracles = [i for i, o in enumerate(oracles) if o.variedCosts]
+
         # Our goal will be to fill this variable with labels.
         self.labels = np.array([None for i in range(self.numDataPoints)])
+        self.numClasses = numClasses
 
         # The set of labeled and unlabeled data point indexes.
         self.L = list()
         self.UL = list(range(self.numDataPoints))
+        self.ULupdate = list()
 
         # Pr(correct | data point, oracle) as 2-d array.
         self.PrCorrect = np.zeros((dataset.shape[0], self.numOracles))
@@ -120,13 +127,18 @@ class PAL(object):
         clusterDistances = kmeans.transform(self.dataset[self.UL, :])
         pts = [[index, clusterDistances[i, :].argmin(), clusterDistances[i, :].min()] for i, index in enumerate(self.UL)]
         pts = [[[pt[0], pt[2]] for pt in pts if pt[1] == c] for c in range(p)]
-        pts = [np.array(sorted(cpts, key=lambda x: x[1])) for cpts in pts]
+        pts = [np.array(sorted(cpts, key=lambda x: x[1])) for cpts in pts if len(cpts) > 0]
+
+        #print("======================")
+        #for cpts in pts:
+        #    print(cpts)
+        #print("======================")
 
         # Query for the top data points, as stored in the 'pts' variable.
         C = 0.0
         for cpts in pts:
             # Determine the data point index and distance to more easily read here.
-            dataPointIndex = cpts[0][0]
+            dataPointIndex = int(cpts[0][0])
             distance = cpts[0][1]
 
             # If the cost would put us above the budget, terminate.
@@ -141,7 +153,7 @@ class PAL(object):
             #print(self.labels[dataPointIndex])
 
         # Update the set of labeled and unlabeled data points.
-        self.L = list(set(self.L) | {cpts[0][0] for cpts in pts if self.labels[cpts[0][0]] != None})
+        self.L = list(set(self.L) | {int(cpts[0][0]) for cpts in pts if self.labels[cpts[0][0]] != None})
         self.UL = list(set(self.UL) - set(self.L))
 
         #print(self.L)
@@ -160,6 +172,18 @@ class PAL(object):
             clusterDataPointIndex = cpts[0][0]
             minDistance = cpts[0][1]
             maxDistance = cpts[-1][1]
+
+            # Handle the cases if there are zero or one data point in this cluster, or it may be that
+            # all data points are equidistant from the centroid.
+            if len(cpts) == 0:
+                # This should never happen, but I just want to be sure I catch it if it does.
+                raise Exception()
+            elif len(cpts) == 1 or abs(minDistance - maxDistance) < 0.0000001:
+                # To prevent weird distance calculations later, we can just use the raw distance estimate.
+                # This means assigning minDistance to zero and maxDistance to one, so the later
+                # equation simplifies.
+                minDistance = 0.0
+                maxDistance = 1.0
 
             # For each point in this cluster.
             for pt in cpts:
@@ -197,6 +221,42 @@ class PAL(object):
 
         return C
 
+    def is_reluctant(self, oracleIndex):
+        """ Return if this oracle is reluctant.
+
+            Parameters:
+                oracleIndex --  The oracle index.
+
+            Returns:
+                True if it is; False otherwise.
+        """
+
+        return oracleIndex in self.reluctantOracles
+
+    def is_fallible(self, oracleIndex):
+        """ Return if this oracle is fallible.
+
+            Parameters:
+                oracleIndex --  The oracle index.
+
+            Returns:
+                True if it is; False otherwise.
+        """
+
+        return oracleIndex in self.fallibleOracles
+
+    def has_varied_costs(self, oracleIndex):
+        """ Return if this oracle has varied costs.
+
+            Parameters:
+                oracleIndex --  The oracle index.
+
+            Returns:
+                True if it is; False otherwise.
+        """
+
+        return oracleIndex in self.variedCostsOracles
+
     def get_labeled_dataset(self):
         """ Get the labeled dataset and its labels.
 
@@ -215,7 +275,31 @@ class PAL(object):
 
         return self.dataset[self.UL, :].copy()
 
-    def get_labeled_data_point_indexes(self):
+    def get_labeled(self, dataPointIndex):
+        """ Get the features of the data point in the labeled dataset of the index provided.
+
+            Parameters:
+                dataPointIndex  --  The index within the labeled dataset.
+
+            Returns:
+                The features of the labeled data point.
+        """
+
+        return self.dataset[self.L[dataPointIndex], :]
+
+    def get_unlabeled(self, dataPointIndex):
+        """ Get the features of the data point in the unlabeled dataset of the index provided.
+
+            Parameters:
+                dataPointIndex  --  The index within the unlabeled dataset.
+
+            Returns:
+                The features of the unlabeled data point.
+        """
+
+        return self.dataset[self.UL[dataPointIndex], :]
+
+    def get_labeled_indexes(self):
         """ Get the labeled data point indexes.
 
             Returns:
@@ -224,7 +308,7 @@ class PAL(object):
 
         return np.array(self.L)
 
-    def get_unlabeled_data_point_indexes(self):
+    def get_unlabeled_indexes(self):
         """ Get the unlabeled data point indexes.
 
             Returns:
@@ -233,67 +317,134 @@ class PAL(object):
 
         return np.array(self.UL)
 
+    def get_num_labeled(self):
+        """ Get the number of labeled data points.
+
+            Returns:
+                The number of labeled data points.
+        """
+
+        return len(self.L)
+
+
+    def get_num_unlabeled(self):
+        """ Get the number of unlabeled data points.
+
+            Returns:
+                The number of unlabeled data points.
+        """
+
+        return len(self.UL)
+
     def get_pr_answer(self, dataPointIndex, oracleIndex):
-        """ Get the probability that an oracle answers for a particular data point.
+        """ Get the probability that an oracle answers for a particular data point in the unlabeled dataset.
 
             Parameters:
-                dataPointIndex  --  The data point index in the entire dataset.
+                dataPointIndex  --  The data point index in the unlabeled dataset.
                 oracle          --  The oracle index.
 
             Returns:
                 The probability that this oracle responds at all.
         """
 
-        return self.PrAnswer[dataPointIndex, oracleIndex]
+        return self.PrAnswer[self.UL[dataPointIndex], oracleIndex]
 
     def get_pr_correct(self, dataPointIndex, oracleIndex):
-        """ Get the probability that an oracle is correct for a particular data point.
+        """ Get the probability that an oracle is correct for a particular data point in the unlabeled dataset.
 
             Parameters:
-                dataPointIndex  --  The data point index in the entire dataset.
+                dataPointIndex  --  The data point index in the unlabeled dataset.
                 oracle          --  The oracle index.
 
             Returns:
                 The probability that this oracle is going to respond with the correct label.
         """
 
-        return self.PrCorrect[dataPointIndex, oracleIndex]
+        return self.PrCorrect[self.UL[dataPointIndex], oracleIndex]
 
     def get_cost(self, dataPointIndex, oracleIndex):
-        """ Get the cost for querying an oracle with a particular data point.
+        """ Get the cost for querying an oracle with a particular data point in the unlabeled dataset.
 
             Parameters:
-                dataPointIndex  --  The data point index in the entire dataset.
+                dataPointIndex  --  The data point index in the unlabeled dataset.
                 oracle          --  The oracle index.
 
             Returns:
                 The cost for asking the oracle to label a data point.
         """
 
-        return self.Cost[dataPointIndex, oracleIndex]
+        return self.Cost[self.UL[dataPointIndex], oracleIndex]
 
+    def get_num_oracles(self):
+        """ Get the number of oracles.
+
+            Returns:
+                The number of oracles.
+        """
+
+        return self.numOracles
+
+    def set_label(self, dataPointIndex, label):
+        """ Set the label at the corresponding unlabeled data point index provided.
+
+            Note: Does not update the sets UL or L, since everything kinda requires these
+            to be fixed while iterating. Hence, the set ULupdate, which when 'update'
+            is called, transfers the indexes from UL to L. This is called after all
+            the run-time iterations have been done.
+
+            Parameters:
+                dataPointIndex  --  The data point index in the unlabeled dataset.
+                label           --  The label to assign to this data point.
+        """
+
+        self.labels[self.UL[dataPointIndex]] = label
+
+        self.ULupdate += [self.UL[dataPointIndex]]
+
+    def map_index_for_query(self, dataPointIndex):
+        """ Maps the data point index from the unlabeled dataset to the Xtrain dataset.
+
+            Parameters:
+                dataPointIndex  --  The data point index in the unlabeled dataset.
+
+            Returns:
+                The data point index from the Xtrain dataset.
+        """
+
+        return self.UL[dataPointIndex]
+
+    def update(self):
+        """ Update the sets of unlabeled and labeled data point indexes.
+
+            Note: This 'resets' the mappings from the unlabeled dataset indexes to the Xtrain dataset indexes.
+        """
+
+        self.L = list(set(self.L) | set(self.ULupdate))
+        self.UL = list(set(self.UL) - set(self.L))
 
 if __name__ == "__main__":
     print("Performing PAL Unit Test...")
 
-    Ctotal = 0.0
-    paymentCallback = lambda c: c
+    mapping = range(150)
 
-    oracles = [Oracle("../experiments/iris/iris.data", 4, paymentCallback),
-                Oracle("../experiments/iris/iris.data", 4, paymentCallback, reluctant=True),
-                Oracle("../experiments/iris/iris.data", 4, paymentCallback, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, paymentCallback, variedCosts=True)]
+    oracles = [Oracle("../experiments/iris/iris.data", 4, mapping),
+                Oracle("../experiments/iris/iris.data", 4, mapping, reluctant=True),
+                Oracle("../experiments/iris/iris.data", 4, mapping, fallible=True),
+                Oracle("../experiments/iris/iris.data", 4, mapping, variedCosts=True)]
 
     dataset = oracles[0].dataset.copy()
 
     Bc = [1.0, 1.0, 1.0, 1.0]
 
-    pal = PAL(dataset, oracles, Bc)
+    pal = PAL(dataset, 3, oracles, Bc)
 
     print("Oracle PrAnswer:\n", pal.PrAnswer)
     print("Oracle PrCorrect:\n", pal.PrCorrect)
     print("Oracle Cost:\n", pal.Cost)
     print("Clustering Cost / Clustering Budget: %.4f / %.4f" % (pal.Ctotal, sum(Bc)))
+
+    for i in range(len(oracles)):
+        print("Oracle %i Properties:" % (i + 1), pal.is_reluctant(i), pal.is_fallible(i), pal.has_varied_costs(i))
 
     print("Done.")
 

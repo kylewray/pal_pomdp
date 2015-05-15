@@ -34,25 +34,24 @@ import numpy.linalg as npla
 import random as rnd
 import itertools as it
 
-from sklearn.neighbors import KNeighborsClassifier
-from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 
-
-# NOTE: THE IDEA FOR THE REWRITE IS THAT THIS OBJECT IS ONLY GIVEN THE *ENTIRE DATASET WITHOUT LABELS*.
-# Use the 'pal.py' to initialize everything shared by all Proactive Learners.
-
-# TODO: REMOVE 'simulate', 'train', and 'truth' from this class. These will go in a 'simulation.py' class
-# which will execute PALPOMDP's *policy* (which needs an external interface). Then, I can make a 'original_pal.py'
-# that implements the 'scenario_1_pal.py', 'scenario_2_pal.py', and 'scenario_3_pal.py' with the same interface
-# to obtain which oracle to label which data point. This will let me put all the statistics in 'simulation.py'.
+from oracle import Oracle
+from pal import PAL
 
 
 class PALPOMDP(MOPOMDP):
-    """ A class which contains oracles. """
+    """ A class which models a proactive learning agent. """
 
-    def __init__(self):
-        """ The constructor of the PAL POMDP class. """
+    def __init__(self, dataset, numClasses, oracles, Bc):
+        """ The constructor of the PAL POMDP class.
+
+            Parameters:
+                dataset     --  The complete dataset without labels. (No labels are included; must query oracles.)
+                numClasses  --  The number of classes.
+                oracles     --  A list of the Oracle objects to use.
+                Bc          --  A list of budgets for how much we can spend for each oracle in initial clustering.
+        """
 
         super().__init__()
 
@@ -60,94 +59,19 @@ class PALPOMDP(MOPOMDP):
         self.actions = None
         self.observations = None
 
-        # The dataset: number of data points, number of classes, and actual data.
-        self.numDataPoints = 0
-        self.numClasses = 0
-
-        self.initialSize = 0
-        self.trainSize = 0
-        self.testSize = 0
-
-        self.kNCC = 0
-        self.dataset = None
-        self.classIndex = 0
-        self.initialIndexes = None
-        self.trainIndexes = None
-        self.testIndexes = None
-
-        # The oracle information.
-        self.numOracles = 0
-        self.PrCorrect = None # Pr(correct | data point, oracle) as 2-d array.
-        self.PrAnswer = None # Pr(answer | data point, oracle) as 2-d array.
-        self.CostOracle = None # C(data point, oracle) as 2-d array.
+        # The PAL object which contains the dataset, labelings, probabilities, costs, and oracle information.
+        self.pal = PAL(dataset, numClasses, oracles, Bc)
 
         # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
         self.tUWD = 1.0
 
-    def load(self, filename):
-        """ Load a PAL file, containing the oracle and dataset information.
+        # Variables used for executing policies.
+        self.Gamma = None
+        self.pi = None
 
-            Parameters:
-                filename    --  The name and path of the file to load.
-        """
-
-        # Load all the data into this object.
-        data = list()
-        filePath = None
-        with open(filename, 'r') as f:
-            reader = csv.reader(f, delimiter=',')
-            for row in reader:
-                data += [list(row)]
-
-            # Remember the path to this file, since it will be used as a base for
-            # loading the data file.
-            filePath = os.path.dirname(os.path.realpath(filename))
-
-        # Attempt to parse all the data into their respective variables.
-        try:
-            # Load the variables corresponding to the dataset.
-            datasetFilename = os.path.join(filePath, str(data[0][1]))
-            self.dataset = np.genfromtxt(datasetFilename, delimiter=',')
-            self.numDataPoints = np.shape(self.dataset)[0]
-            self.classIndex = int(data[0][2])
-            self.numClasses = len(set(self.dataset[:, self.classIndex]))
-
-            # Load the variables corresponding to the training/testing classifier.
-            self.classifier = str(data[0][3])
-            self.initialSize = int(data[0][4])
-            self.trainSize = int(data[0][5])
-            self.testSize = int(data[0][6])
-            self.kNCC = int(data[0][7])
-
-            # Load the oracle information.
-            self.numOracles = int(data[0][0])
-
-            # Note: The number of 'features' in the file: Pr(correct), Pr(answer), Cost(oracle).
-            numFeatures = 3
-
-            rowOffset = 1
-            self.initialIndexes = np.array([int(data[rowOffset][idp]) for idp in range(self.initialSize)])
-
-            rowOffset = 2
-            self.testIndexes = np.array([int(data[rowOffset][idp]) for idp in range(self.testSize)])
-
-            rowOffset = 3
-            colOffset = 1
-            self.trainIndexes = np.array([int(data[tdp + rowOffset][0]) for tdp in range(self.trainSize)])
-
-            self.PrCorrect = np.array([[float(data[tdp + rowOffset][(o * numFeatures + 0) + colOffset]) \
-                                        for o in range(self.numOracles)] \
-                                    for tdp in range(self.trainSize)])
-            self.PrAnswer = np.array([[float(data[tdp + rowOffset][(o * numFeatures + 1) + colOffset]) \
-                                        for o in range(self.numOracles)] \
-                                    for tdp in range(self.trainSize)])
-            self.CostOracle = np.array([[float(data[tdp + rowOffset][(o * numFeatures + 2) + colOffset]) \
-                                        for o in range(self.numOracles)] \
-                                    for tdp in range(self.trainSize)])
-
-        except Exception:
-            print("Failed to load file '%s'." % (filename))
-            raise Exception()
+        self.currentDataPointIndex = 0
+        self.previousAction = None
+        self.b = None
 
     def _entropy(self, Pr):
         """ Compute the entropy of the probability given.
@@ -172,8 +96,8 @@ class PALPOMDP(MOPOMDP):
                 The uncertainty weighted density of the data point provided.
         """
 
-        Nx = [i for i in self.trainIndexes if npla.norm(self.dataset[i, :] - self.dataset[dataPointIndex, :]) < self.tUWD]
-        return sum([np.exp(-pow(npla.norm(self.dataset[dataPointIndex, :] - self.dataset[k, :]), 2)) * self._entropy(PryGxw) for k in Nx])
+        Nx = [i for i in range(self.pal.get_num_unlabeled()) if npla.norm(self.pal.get_unlabeled(i) - self.pal.get_unlabeled(dataPointIndex)) < self.tUWD]
+        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(k)), 2)) * self._entropy(PryGxw) for k in Nx])
 
     def _compute_reward(self, s, a, dataPointIndex):
         """ Compute the reward based on the oracle cost, the budget, and some measure of the value of information.
@@ -181,61 +105,56 @@ class PALPOMDP(MOPOMDP):
             Parameters:
                 s               --  The state index.
                 a               --  The action index.
-                dataPointIndex  --  The data point index, from trainIndexes.
+                dataPointIndex  --  The data point index within the unlabeled data set.
 
             Returns:
                 The reward which combines a number of variables.
         """
 
-        # Split apart the features and class labels.
-        nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != self.classIndex]
-        dataset = self.dataset[:, nonClassIndexes]
-        labels = self.dataset[:, self.classIndex]
+        # First off, if we failed to label the data point last time, provide zero reward for choosing
+        # an unreliable oracle again. This of course can be extended, or generalized, to any number of
+        # "times you observed an oracle fail to respond." Since we are dealing with the original problem
+        # formulation which has oracles that simply will *not respond ever* to a data point, we don't
+        # want to get stuck picking that oracle on that data point forever. The original paper's model
+        # is a bit impractical in this regard, and our model is a proof-of-concept, which can be easily
+        # adapted in any manner to accommodate *anything*; it is a POMDP after all.
+        if self.states[s][2] == False and self.pal.is_reluctant(a):
+            return 0.0
 
         # Create the initial training subset of the data.
-        Xinitial = dataset[self.initialIndexes, :]
-        yinitial = labels[self.initialIndexes]
+        Xinitial, yinitial = self.pal.get_labeled_dataset()
 
         # Create the training subset of the data. This is what we are building the PAL POMDP to operate over.
         # We need to use the data, without any labels of course, to determine the 'value of information' component
         # of the reward. This is based on the 'estimated uncertainty of the current learning function.'
-        Xtrain = dataset[self.trainIndexes, :]
+        Xtrain = self.pal.get_unlabeled_dataset()
 
-        # Train using k-nearest neighbors, logistic regression, or an SVM.
-        if self.classifier == 'logistic_regression':
-            c = LogisticRegression(C=1e5)
-            c.fit(Xinitial, yinitial)
-            PryGxw = c.predict_proba(Xtrain)[dataPointIndex, :]
+        # Train using a SVM.
+        c = SVC(kernel='rbf', max_iter=1000, probability=True)
+        c.fit(Xinitial, yinitial)
+        PryGxw = c.predict_proba(Xtrain)[dataPointIndex, :]
 
-            return self._uncertainty_weighted_density(dataPointIndex, PryGxw) / self.CostOracle[dataPointIndex, a]
-        elif self.classifier == 'svm':
-            c = SVC(kernel='rbf', max_iter=1000, probability=True)
-            c.fit(Xinitial, yinitial)
-            PryGxw = c.predict_proba(Xtrain)[dataPointIndex, :]
-
-            return self._uncertainty_weighted_density(dataPointIndex, PryGxw) / self.CostOracle[dataPointIndex, a]
-        else:
-            return 1.0 / self.CostOracle[dataPointIndex, a]
+        return self._uncertainty_weighted_density(dataPointIndex, PryGxw) / self.pal.get_cost(dataPointIndex, a)
 
     def create(self):
         """ Create the POMDP once the oracles and their probabilities have been defined. """
 
         # Create the states.
         self.states = list() #['Initial'] #, 'Success', 'Failure']
-        for i in range(self.trainSize):
+        for i in range(self.pal.get_num_unlabeled()):
             # For this data point (i.e., dataset[i, :]) create the corresponding states as a tuple:
             # < num correct, num incorrect, oracle responded >
             for numCorrect in range(i + 1):
                 self.states += [(numCorrect, i - numCorrect, True), (numCorrect, i - numCorrect, False)]
 
         # The last set of states for the last data point only has true, which self-loops, since we are done.
-        for numCorrect in range(self.trainSize + 1):
-            self.states += [(numCorrect, self.trainSize - numCorrect, True)]
+        for numCorrect in range(self.pal.get_num_unlabeled() + 1):
+            self.states += [(numCorrect, self.pal.get_num_unlabeled() - numCorrect, True)]
 
         self.n = len(self.states)
 
         # Create the actions.
-        self.actions = [i for i in range(self.numOracles)]
+        self.actions = [i for i in range(self.pal.get_num_oracles())]
         self.m = len(self.actions)
 
         # Create the state transitions.
@@ -245,7 +164,7 @@ class PALPOMDP(MOPOMDP):
                 for sp, statePrime in enumerate(self.states):
                     #print(state, action, statePrime)
 
-                    if state[0] + state[1] == self.trainSize and state == statePrime:
+                    if state[0] + state[1] == self.pal.get_num_unlabeled() and state == statePrime:
                         self.T[s][a][sp] = 1.0
 
                     elif state[0] == statePrime[0] and state[1] == statePrime[1] and \
@@ -255,7 +174,7 @@ class PALPOMDP(MOPOMDP):
                         # then we assign the probability of no answer (response) which equals
                         # 1 - Pr(answer | oracle, data point).
                         dataPointIndex = state[0] + state[1]
-                        self.T[s][a][sp] = 1.0 - self.PrAnswer[dataPointIndex, action]
+                        self.T[s][a][sp] = 1.0 - self.pal.get_pr_answer(dataPointIndex, action)
 
                     elif (state[0] + 1 == statePrime[0] and state[1] == statePrime[1]) and \
                             ((state[2] == True and statePrime[2] == True) or \
@@ -264,7 +183,7 @@ class PALPOMDP(MOPOMDP):
                         # then we assign the probability of a correct labeling for this oracle, which equals
                         # Pr(answer | oracle, data point of s [not sp]) * Pr(correct | oracle, data point)
                         dataPointIndex = state[0] + state[1]
-                        self.T[s][a][sp] = self.PrAnswer[dataPointIndex, action] * self.PrCorrect[dataPointIndex, action]
+                        self.T[s][a][sp] = self.pal.get_pr_answer(dataPointIndex, action) * self.pal.get_pr_correct(dataPointIndex, action)
 
                     elif (state[0] == statePrime[0] and state[1] + 1 == statePrime[1]) and \
                             ((state[2] == True and statePrime[2] == True) or \
@@ -273,7 +192,7 @@ class PALPOMDP(MOPOMDP):
                         # then we assign the probability of an incorrect labeling for this oracle, which equals
                         # Pr(answer | oracle, data point of s [not sp]) * (1 - Pr(correct | oracle, data point))
                         dataPointIndex = state[0] + state[1]
-                        self.T[s][a][sp] = self.PrAnswer[dataPointIndex, action] * (1.0 - self.PrCorrect[dataPointIndex, action])
+                        self.T[s][a][sp] = self.pal.get_pr_answer(dataPointIndex, action) * (1.0 - self.pal.get_pr_correct(dataPointIndex, action))
 
                 #print(sum([self.T[s][a][sp] for sp in range(len(states))]))
                     
@@ -305,7 +224,7 @@ class PALPOMDP(MOPOMDP):
             self.B += [b]
 
         # Add the mixed belief among each collection of states which are "probabilistically entangled."
-        for i in range(self.trainSize):
+        for i in range(self.pal.get_num_unlabeled()):
             numNonZeroBelief = float(i + 1)
 
             for answered in [True, False]:
@@ -317,8 +236,6 @@ class PALPOMDP(MOPOMDP):
 
         # Important: We do *not* need to add belief points for the final set of states; these states have
         # no meaningful action to take there, since they are all absorbing with zero reward.
-        #for numCorrect in range(self.trainSize + 1):                       # Do not do this.
-        #    states += [(numCorrect, self.trainSize - numCorrect, True)]    # Do not do this.
 
         self.r = len(self.B)
         self.B = np.array(self.B)
@@ -332,7 +249,7 @@ class PALPOMDP(MOPOMDP):
             dataPointIndex = (state[0] + state[1] - 1) + 1
 
             # If this was the last data point row (which are absorbing states), then no cost.
-            if dataPointIndex == self.trainSize:
+            if dataPointIndex == self.pal.get_num_unlabeled():
                 continue
 
             for a, action in enumerate(self.actions):
@@ -340,90 +257,156 @@ class PALPOMDP(MOPOMDP):
 
         self.R = np.array(self.R)
 
-        self.horizon = self.trainSize # * 10
+        self.horizon = self.pal.get_num_unlabeled() * 2 # Assume each can fail to respond once.
 
         self._compute_optimization_variables()
 
-    def _max_alpha_vector(self, b, Gamma, pi):
-        """ Return the best value and action at the belief point given.
+    def solve(self):
+        """ Override the solve function to instead store the policy internally. """
 
-            Parameters:
-                b       --  The belief point (numpy array).
-                Gamma   --  The alpha-vectors for the policy (numpy array).
-                pi      --  The corresponding actions for each alpha-vector of the policy (numpy array).
-        """
+        self.Gamma, self.pi = super().solve()
 
-        v = np.matrix(Gamma) * np.matrix(b).T
-        return np.max(v), pi[np.argmax(v)]
+        # Initially, there is a collapsed belief over the first state.
+        self.b = np.array([0.0 for s in self.states])
+        self.b[0] = 1.0
 
-    def simulate(self, Gamma, pi, outputHistory=False):
-        """ Simulate the execution of a given policy. Optionally output the action-observation history. This
-            stores the history for use in creating a final classifier.
+        #print(self.Gamma)
+        #print(self.pi)
 
-            Parameters:
-                Gamma           --  The alpha-vectors for the policy.
-                pi              --  The corresponding actions for each alpha-vector of the policy.
-                outputHistory   --  Optionally output the action-observation history. Default is False.
+    def _max_alpha_vector(self):
+        """ Return the best value and action at the current internal belief point, using the internally stored policy. """
+
+        v = np.matrix(self.Gamma) * np.matrix(self.b).T
+        return np.max(v), self.pi[np.argmax(v)]
+
+    def select(self):
+        """ Based on the current belief, select an oracle to label the next belief.
 
             Returns:
-                The labels found while executing the policy.
+                action                  --  The oracle index to label the current data point, whatever that may be.
+                currentDataPointIndex   --  The index of the data point in the *Xtrain* dataset.
         """
 
-        # We know the true state of the system initially.
-        b = np.array([0.0 for s in range(self.n)])
-        b[0] = 1.0
-        s = 0
+        # If we have run out of points to label, then select nothing.
+        if self.currentDataPointIndex == self.pal.get_num_unlabeled():
+            return None, None
 
-        ylabels = [None for i in range(self.trainSize)]
-        dataPoint = 0
+        val, action = self._max_alpha_vector()
+        self.previousAction = action
+        return action, self.pal.map_index_for_query(self.currentDataPointIndex)
 
-        while dataPoint < self.trainSize:
-            # Take the action.
-            v, a = self._max_alpha_vector(b, Gamma, pi)
+    def update(self, label, cost):
+        """ Update the belief with this new information.
 
-            print("Action: %i" % (a))
+            Parameters:
+                label   --  The label observed (either 0, ..., num classes - 1, or None).
+                cost    --  The cost associated with the previous request.
+        """
 
-            # Stochastically transition the state.
-            sp = None
-            target = rnd.random()
-            current = 0.0
-            for spIter in range(self.n):
-                current += self.T[s, a, spIter]
-                if current >= target:
-                    sp = spIter
-                    break
+        # Update the labeled and unlabeled datasets in the PAL object, as well as the cost.
+        if label != None:
+            self.pal.set_label(self.currentDataPointIndex, label)
+            self.currentDataPointIndex += 1
 
-            # Obtain the label, modeling: non-responsive, success, and failure, respectively.
-            if self.states[s][0] == self.states[sp][0] and self.states[s][1] == self.states[sp][1]:
-                ylabels[dataPoint] = None
-            elif self.states[s][0] + 1 == self.states[sp][0] and self.states[s][1] == self.states[sp][1]:
-                ylabels[dataPoint] = self.dataset[self.trainIndexes[dataPoint], self.classIndex]
-                dataPoint += 1
-            elif self.states[s][0] == self.states[sp][0] and self.states[s][1] + 1 == self.states[sp][1]:
-                # Failed, so randomly pick one of the other classes.
-                correctClass = int(self.dataset[self.trainIndexes[dataPoint], self.classIndex])
-                wrongClasses = list(set(range(self.numClasses)) - {correctClass})
-                ylabels[dataPoint] = rnd.sample(wrongClasses, 1)[0]
-                dataPoint += 1
+        #print("Current Data Point Index: %i" % (self.currentDataPointIndex))
 
-            # Stochastically make an observation.
-            o = None
-            target = rnd.random()
-            current = 0.0
-            for oIter in range(self.z):
-                current += self.O[a, sp, oIter]
-                if current >= target:
-                    o = oIter
-                    break
+        # Define the observation.
+        obs = None
+        if label != None:
+            obs = 0 # The observation was 'True', which is index 0.
+        else:
+            obs = 1 # The observation was 'False', which is index 1.
 
-            # Update the belief point.
-            bNew = np.array([self.O[a, spIter, o] * np.dot(self.T[:, a, spIter], b) for spIter in range(self.n)])
-            b = bNew / bNew.sum()
+        # Update the belief point.
+        bNew = np.array([self.O[self.previousAction, spIter, obs] * np.dot(self.T[:, self.previousAction, spIter], self.b) for spIter in range(self.n)])
+        self.b = bNew / bNew.sum()
 
-            # Transition the state!
-            s = sp
+    def finish(self):
+        """ Perform any final finishing computation once the budget is spent or data points have all been labeled. Then, return the labeled dataset.
 
-        return np.array(ylabels)
+            Returns:
+                dataset --  The features of the data points which have be proactively labeled.
+                labels  --  The proactively learned labels.
+        """
+
+        self.pal.update()
+        return self.pal.get_labeled_dataset()
+
+    def reset(self):
+        """ Reset the variables controlling iteration. This does not reset the policy.  """
+
+        self.currentDataPointIndex = 0
+        self.previousAction = None
+        self.b = None
+
+#    def simulate(self, Gamma, pi, outputHistory=False):
+#        """ Simulate the execution of a given policy. Optionally output the action-observation history. This
+#            stores the history for use in creating a final classifier.
+#
+#            Parameters:
+#                Gamma           --  The alpha-vectors for the policy.
+#                pi              --  The corresponding actions for each alpha-vector of the policy.
+#                outputHistory   --  Optionally output the action-observation history. Default is False.
+#
+#            Returns:
+#                The labels found while executing the policy.
+#        """
+#
+#        # We know the true state of the system initially.
+#        b = np.array([0.0 for s in range(self.n)])
+#        b[0] = 1.0
+#        s = 0
+#
+#        ylabels = [None for i in range(self.trainSize)]
+#        dataPoint = 0
+#
+#        while dataPoint < self.trainSize:
+#            # Take the action.
+#            v, a = self._max_alpha_vector(b, Gamma, pi)
+#
+#            print("Action: %i" % (a))
+#
+#            # Stochastically transition the state.
+#            sp = None
+#            target = rnd.random()
+#            current = 0.0
+#            for spIter in range(self.n):
+#                current += self.T[s, a, spIter]
+#                if current >= target:
+#                    sp = spIter
+#                    break
+#
+#            # Obtain the label, modeling: non-responsive, success, and failure, respectively.
+#            if self.states[s][0] == self.states[sp][0] and self.states[s][1] == self.states[sp][1]:
+#                ylabels[dataPoint] = None
+#            elif self.states[s][0] + 1 == self.states[sp][0] and self.states[s][1] == self.states[sp][1]:
+#                ylabels[dataPoint] = self.dataset[self.trainIndexes[dataPoint], self.classIndex]
+#                dataPoint += 1
+#            elif self.states[s][0] == self.states[sp][0] and self.states[s][1] + 1 == self.states[sp][1]:
+#                # Failed, so randomly pick one of the other classes.
+#                correctClass = int(self.dataset[self.trainIndexes[dataPoint], self.classIndex])
+#                wrongClasses = list(set(range(self.numClasses)) - {correctClass})
+#                ylabels[dataPoint] = rnd.sample(wrongClasses, 1)[0]
+#                dataPoint += 1
+#
+#            # Stochastically make an observation.
+#            o = None
+#            target = rnd.random()
+#            current = 0.0
+#            for oIter in range(self.z):
+#                current += self.O[a, sp, oIter]
+#                if current >= target:
+#                    o = oIter
+#                    break
+#
+#            # Update the belief point.
+#            bNew = np.array([self.O[a, spIter, o] * np.dot(self.T[:, a, spIter], b) for spIter in range(self.n)])
+#            b = bNew / bNew.sum()
+#
+#            # Transition the state!
+#            s = sp
+#
+#        return np.array(ylabels)
 
 #    def train(self, ytrain):
 #        """ Train the final classifier after a simulation has generated a history of actions and observations.
@@ -486,4 +469,30 @@ class PALPOMDP(MOPOMDP):
 #        """ Test the accuracy of the final classifier once it has been trained. """
 #
 #        pass
+
+
+if __name__ == "__main__":
+    print("Performing PALPOMDP Unit Test...")
+
+    mapping = range(45)
+
+    oracles = [Oracle("../experiments/iris/iris_small.data", 4, mapping),
+                Oracle("../experiments/iris/iris_small.data", 4, mapping, reluctant=True),
+                Oracle("../experiments/iris/iris_small.data", 4, mapping, fallible=True),
+                Oracle("../experiments/iris/iris_small.data", 4, mapping, variedCosts=True)]
+
+    dataset = oracles[0].dataset.copy()
+
+    Bc = [1.0, 1.0, 1.0, 1.0]
+
+    palpomdp = PALPOMDP(dataset, 3, oracles, Bc)
+
+    palpomdp.create()
+    print(palpomdp)
+
+    palpomdp.solve()
+    print("Gamma:\n", palpomdp.Gamma)
+    print("pi:\n", palpomdp.pi.tolist())
+
+    print("Done.")
 
