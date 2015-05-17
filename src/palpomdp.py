@@ -83,13 +83,21 @@ class PALPOMDP(MOPOMDP):
                 The entropy of the probability.
         """
 
-        return -sum([Pr[y] * np.log(Pr[y]) for y in range(Pr.shape[0])])
+        # Handle the special case when Pr[y] == 0 (or is close). Since lim Pr(y) log(Pr(y)) -> 0,
+        # we use this convention.
+        def entropy_func(y):
+            if Pr[y] < 0.0000000001:
+                return 0.0
+            else:
+                return Pr[y] * np.log(Pr[y])
+
+        return -sum([entropy_func(y) for y in range(Pr.shape[0])])
 
     def _uncertainty_weighted_density(self, dataPointIndex, PryGxw):
         """ Compute the uncertainty weighted density given the data point.
 
             Parameters:
-                dataPointIndex  --  The data point index, from trainIndexes.
+                dataPointIndex  --  The data point index, from the unlabeled dataset.
                 PryGxw          --  Pr(y | x, w) is the probability of each label for this data point.
 
             Returns:
@@ -322,12 +330,7 @@ class PALPOMDP(MOPOMDP):
         self.b = bNew / bNew.sum()
 
     def finish(self):
-        """ Perform any final finishing computation once the budget is spent or data points have all been labeled. Then, return the labeled dataset.
-
-            Returns:
-                dataset --  The features of the data points which have be proactively labeled.
-                labels  --  The proactively learned labels.
-        """
+        """ Perform any final finishing computation once the budget is spent or data points have all been labeled. Then, return the labeled dataset. """
 
         self.pal.update()
         return self.pal.get_labeled_dataset()
@@ -479,7 +482,7 @@ if __name__ == "__main__":
     oracles = [Oracle("../experiments/iris/iris_small.data", 4, mapping),
                 Oracle("../experiments/iris/iris_small.data", 4, mapping, reluctant=True),
                 Oracle("../experiments/iris/iris_small.data", 4, mapping, fallible=True),
-                Oracle("../experiments/iris/iris_small.data", 4, mapping, variedCosts=True)]
+                Oracle("../experiments/iris/iris_small.data", 4, mapping, costVarying=True)]
 
     dataset = oracles[0].dataset.copy()
 

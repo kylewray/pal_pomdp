@@ -32,6 +32,7 @@ from sklearn.svm import SVC
 from oracle import Oracle
 from palpomdp import PALPOMDP
 from paloriginal import *
+from palbaseline import *
 
 
 class Simulation(object):
@@ -65,6 +66,8 @@ class Simulation(object):
 
         if self.scenario == 'original_1' or self.scenario == 'original_2' or self.scenario == 'original_3':
             self.numAlgorithms = 2
+        elif self.scenario == 'baseline':
+            self.numAlgorithms = 6
         else:
             self.numAlgorithms = 4
 
@@ -134,14 +137,21 @@ class Simulation(object):
             self.Bc = [1.0, 1.0]
         elif self.scenario == 'original_3':
             self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, variedCosts=True)] \
+                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, costVarying=True)] \
                         for i in range(self.numAlgorithms)]
             self.Bc = [1.0, 1.0]
+        elif self.scenario == 'baseline':
+            self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
+                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, reluctant=True),
+                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, fallible=True),
+                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, costVarying=True)] \
+                        for i in range(self.numAlgorithms)]
+            self.Bc = [1.0, 1.0, 1.0, 1.0]
         else:
             self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
                             Oracle(self.datasetFile, self.classIndex, self.trainIndexes, reluctant=True),
                             Oracle(self.datasetFile, self.classIndex, self.trainIndexes, fallible=True),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, variedCosts=True)] \
+                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, costVarying=True)] \
                         for i in range(self.numAlgorithms)]
             self.Bc = [1.0, 1.0, 1.0, 1.0]
 
@@ -150,23 +160,38 @@ class Simulation(object):
 
         if self.scenario == 'original_1':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario1()]
+                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], self.Bc)]
         elif self.scenario == 'original_2':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario2()]
+                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], self.Bc)]
         elif self.scenario == 'original_3':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario3()]
+                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], self.Bc)]
+        elif self.scenario == 'baseline':
+            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
+                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[1]),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[2], 0),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 1),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 2),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[5], 3)]
         else:
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario1(),
-                               PALOriginalScenario2(),
-                               PALOriginalScenario3()]
+                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[2], self.Bc),
+                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[3], self.Bc)]
 
         # Create and solve the PALPOMDP. Store the policy within the PALPOMDP class and use the custom
-        # helper functions later to get the policy and update the belief.
-        self.algorithms[0].create()
-        self.algorithms[0].solve()
+        # helper functions later to get the policy and update the belief. Try the same commands for the
+        # other types, in case they need to do any computation.
+        for algorithm in self.algorithms:
+            try:
+                algorithm.create()
+            except Exception:
+                pass
+            try:
+                algorithm.solve()
+            except Exception:
+                pass
 
     def execute(self):
         """ Execute the entire simulation. """
@@ -186,7 +211,7 @@ class Simulation(object):
 
             # For each algorithm, use the Xtrain to compute labels.
             for j, algorithm in enumerate(self.algorithms):
-                print("\tAlgorithm %i of %i." % (j + 1, self.numAlgorithms))
+                print("Algorithm %i of %i." % (j + 1, self.numAlgorithms))
 
                 # The agent spent an inital cost for clustering.
                 currentCost = algorithm.pal.Ctotal
@@ -207,7 +232,7 @@ class Simulation(object):
                     # The algorithm updates internal information.
                     algorithm.update(label, cost)
 
-                    print("Action: %i\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(label), cost, currentCost, self.B))
+                    print("\tAction: %i\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(label), cost, currentCost, self.B))
 
                 # Perform necessary finishing tasks with this algorithm, then get the
                 # proactively learned labels and dataset.
@@ -224,21 +249,34 @@ class Simulation(object):
                 else:
                     print("Error: Invalid classifier '%s'." % (self.classifier))
                     raise Exception()
-                c.fit(dataset, labels)
 
-                # Predict for each of the data points in the test set.
-                yprediction = c.predict(self.Xtest)
+                accuracy = 0.0
+                try:
+                    # Attempt to learn a model. This may fail, e.g., the number of data points is
+                    # less than the number of features. This might happen for the baseline oracles,
+                    # such as the one who constantly picks the oracle who is reluctant to answer.
+                    # If it fails, then the accuracy is zero.
+                    c.fit(dataset, labels)
 
-                # Compute accuracy and update it!
-                accuracy = np.sum(self.ytest == yprediction) / self.ytest.size
+                    # Predict for each of the data points in the test set.
+                    yprediction = c.predict(self.Xtest)
+
+                    # Compute accuracy!
+                    accuracy = np.sum(self.ytest == yprediction) / self.ytest.size
+                except ValueError:
+                    pass
+
+                # Update accuracy and cost!
                 avgAccuracy[j] = (float(i) * avgAccuracy[j] + accuracy) / float(i + 1)
-
-                # Update cost!
                 avgCost[j] = (float(i) * avgCost[j] + currentCost) / float(i + 1)
 
                 print("\tCost:      %.3f" % (currentCost))
                 print("\tAccuracy:  %.3f" % (accuracy))
 
+        for j in range(self.numAlgorithms):
+            print("Algorithm %i of %i:" % (j + 1, self.numAlgorithms))
+            print("\tTotal Average Cost:      %.3f" % (avgCost[j]))
+            print("\tTotal Average Accuracy:  %.3f" % (avgAccuracy[j]))
 
 if __name__ == "__main__":
     #try:

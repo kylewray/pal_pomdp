@@ -56,7 +56,7 @@ class PAL(object):
 
         self.reluctantOracles = [i for i, o in enumerate(oracles) if o.reluctant]
         self.fallibleOracles = [i for i, o in enumerate(oracles) if o.fallible]
-        self.variedCostsOracles = [i for i, o in enumerate(oracles) if o.variedCosts]
+        self.costVaryingOracles = [i for i, o in enumerate(oracles) if o.costVarying]
 
         # Our goal will be to fill this variable with labels.
         self.labels = np.array([None for i in range(self.numDataPoints)])
@@ -221,6 +221,20 @@ class PAL(object):
 
         return C
 
+    def is_normal(self, oracleIndex):
+        """ Return if this oracle is normal (i.e., not reluctant, fallible, or cost-varying).
+
+            Returns:
+                True if it is; False otherwise.
+        """
+
+        if oracleIndex in self.reluctantOracles or \
+                oracleIndex in self.fallibleOracles or \
+                oracleIndex in self.costVaryingOracles:
+            return False
+        else:
+            return True
+
     def is_reluctant(self, oracleIndex):
         """ Return if this oracle is reluctant.
 
@@ -245,8 +259,8 @@ class PAL(object):
 
         return oracleIndex in self.fallibleOracles
 
-    def has_varied_costs(self, oracleIndex):
-        """ Return if this oracle has varied costs.
+    def is_cost_varying(self, oracleIndex):
+        """ Return if this oracle is cost varying.
 
             Parameters:
                 oracleIndex --  The oracle index.
@@ -255,7 +269,7 @@ class PAL(object):
                 True if it is; False otherwise.
         """
 
-        return oracleIndex in self.variedCostsOracles
+        return oracleIndex in self.costVaryingOracles
 
     def get_labeled_dataset(self):
         """ Get the labeled dataset and its labels.
@@ -421,6 +435,7 @@ class PAL(object):
 
         self.L = list(set(self.L) | set(self.ULupdate))
         self.UL = list(set(self.UL) - set(self.L))
+        self.ULupdate = list()
 
 if __name__ == "__main__":
     print("Performing PAL Unit Test...")
@@ -430,7 +445,7 @@ if __name__ == "__main__":
     oracles = [Oracle("../experiments/iris/iris.data", 4, mapping),
                 Oracle("../experiments/iris/iris.data", 4, mapping, reluctant=True),
                 Oracle("../experiments/iris/iris.data", 4, mapping, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, mapping, variedCosts=True)]
+                Oracle("../experiments/iris/iris.data", 4, mapping, costVarying=True)]
 
     dataset = oracles[0].dataset.copy()
 
@@ -444,7 +459,7 @@ if __name__ == "__main__":
     print("Clustering Cost / Clustering Budget: %.4f / %.4f" % (pal.Ctotal, sum(Bc)))
 
     for i in range(len(oracles)):
-        print("Oracle %i Properties:" % (i + 1), pal.is_reluctant(i), pal.is_fallible(i), pal.has_varied_costs(i))
+        print("Oracle %i Properties:" % (i + 1), pal.is_reluctant(i), pal.is_fallible(i), pal.is_cost_varying(i))
 
     print("Done.")
 

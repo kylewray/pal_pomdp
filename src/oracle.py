@@ -36,7 +36,7 @@ ORACLE_UNCERTAINTY_THRESHOLD = 0.75
 class Oracle(object):
     """ An oracle class which has the *true* probabilities, and is able to simulate them given a data point. """
 
-    def __init__(self, datasetFile, classIndex, mapping, reluctant=False, fallible=False, variedCosts=False,
+    def __init__(self, datasetFile, classIndex, mapping, reluctant=False, fallible=False, costVarying=False,
                 dataSubset=ORACLE_DATA_SUBSET, uncertaintyThreshold=ORACLE_UNCERTAINTY_THRESHOLD,
                 defaultCost=ORACLE_DEFAULT_COST, costRatio=ORACLE_DEFAULT_COST_RATIO):
         """ The constructor of the Oracle.
@@ -48,7 +48,7 @@ class Oracle(object):
                 reluctant               --  This oracle varies in its ability to answer. Default is False.
                 fallible                --  This oracle varies in its ability to answer correctly. Default
                                             is False.
-                variedCosts             --  This oracle varies its cost. Default is False.
+                costVarying             --  This oracle varies its cost. Default is False.
                 dataSubset              --  The subset ratio of the dataset for determining probabilities. Default
                                             is ORACLE_DATA_SUBSET.
                 uncertaintyThreshold    --  The uncertainty threshold for determining indexes. Default is
@@ -88,10 +88,10 @@ class Oracle(object):
         self.fallible = fallible
 
         self.costs = np.array([cost for i in range(self.numDataPoints)])
-        if variedCosts:
+        if costVarying:
             self._compute_varied_costs(dataSubset, defaultCost, costRatio)
 
-        self.variedCosts = variedCosts
+        self.costVarying = costVarying
 
     def _random_train(self, dataSubset, uncertaintyThreshold):
         """ Randomly train on a subset of the data, and find indexes within the specified uncertainty probability range.
@@ -215,7 +215,7 @@ if __name__ == "__main__":
     oracles = [Oracle("../experiments/iris/iris.data", 4, mapping),
                 Oracle("../experiments/iris/iris.data", 4, mapping, reluctant=True),
                 Oracle("../experiments/iris/iris.data", 4, mapping, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, mapping, variedCosts=True)]
+                Oracle("../experiments/iris/iris.data", 4, mapping, costVarying=True)]
 
     for i in range(150):
         for oi, o in enumerate(oracles):
