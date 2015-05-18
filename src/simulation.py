@@ -65,7 +65,7 @@ class Simulation(object):
         self.numIterations = numIterations
 
         if self.scenario == 'original_1' or self.scenario == 'original_2' or self.scenario == 'original_3':
-            self.numAlgorithms = 2
+            self.numAlgorithms = 5
         elif self.scenario == 'baseline':
             self.numAlgorithms = 6
         else:
@@ -160,13 +160,22 @@ class Simulation(object):
 
         if self.scenario == 'original_1':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], self.Bc)]
+                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
         elif self.scenario == 'original_2':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], self.Bc)]
+                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
         elif self.scenario == 'original_3':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], self.Bc)]
+                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
+                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
         elif self.scenario == 'baseline':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
                                PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[1]),
@@ -184,34 +193,32 @@ class Simulation(object):
         # helper functions later to get the policy and update the belief. Try the same commands for the
         # other types, in case they need to do any computation.
         for algorithm in self.algorithms:
-            try:
-                algorithm.create()
-            except Exception:
-                pass
-            try:
-                algorithm.solve()
-            except Exception:
-                pass
+            algorithm.create()
 
     def execute(self):
         """ Execute the entire simulation. """
 
-        avgAccuracy = [0.0 for i in range(self.numAlgorithms)]
-        avgCost = [0.0 for i in range(self.numAlgorithms)]
+        accuracies = [list() for i in range(self.numAlgorithms)]
+        costs = [list() for i in range(self.numAlgorithms)]
+        #avgAccuracy = [0.0 for i in range(self.numAlgorithms)]
+        #avgCost = [0.0 for i in range(self.numAlgorithms)]
 
         # For each iteration, we randomly re-split the dataset, re-create all algorithms and oracles,
         # execute each algorithm on the dataset, obtain labels, train a classifier using these
         # labels for the train set, then test the accuracy of the classifier on the test set. The
         # accuracy and cost results are averaged for each.
         for i in range(self.numIterations):
-            print("Iteration %i of %i." % (i + 1, self.numIterations))
+            print(".", end='')
+            sys.stdout.flush()
+
+            #print("Iteration %i of %i." % (i + 1, self.numIterations))
 
             # Re-create the split of train/test, the oracles, and algorithms.
             self._initialize()
 
             # For each algorithm, use the Xtrain to compute labels.
             for j, algorithm in enumerate(self.algorithms):
-                print("Algorithm %i of %i." % (j + 1, self.numAlgorithms))
+                #print("Algorithm %i of %i." % (j + 1, self.numAlgorithms))
 
                 # The agent spent an inital cost for clustering.
                 currentCost = algorithm.pal.Ctotal
@@ -232,7 +239,7 @@ class Simulation(object):
                     # The algorithm updates internal information.
                     algorithm.update(label, cost)
 
-                    print("\tAction: %i\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(label), cost, currentCost, self.B))
+                    #print("\tAction: %i\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(label), cost, currentCost, self.B))
 
                 # Perform necessary finishing tasks with this algorithm, then get the
                 # proactively learned labels and dataset.
@@ -267,16 +274,24 @@ class Simulation(object):
                     pass
 
                 # Update accuracy and cost!
-                avgAccuracy[j] = (float(i) * avgAccuracy[j] + accuracy) / float(i + 1)
-                avgCost[j] = (float(i) * avgCost[j] + currentCost) / float(i + 1)
+                accuracies[j] += [accuracy]
+                costs[j] += [currentCost]
+                #avgAccuracy[j] = (float(i) * avgAccuracy[j] + accuracy) / float(i + 1)
+                #avgCost[j] = (float(i) * avgCost[j] + currentCost) / float(i + 1)
 
-                print("\tCost:      %.3f" % (currentCost))
-                print("\tAccuracy:  %.3f" % (accuracy))
+                #print("\tCost:      %.3f" % (currentCost))
+                #print("\tAccuracy:  %.3f" % (accuracy))
 
-        for j in range(self.numAlgorithms):
-            print("Algorithm %i of %i:" % (j + 1, self.numAlgorithms))
-            print("\tTotal Average Cost:      %.3f" % (avgCost[j]))
-            print("\tTotal Average Accuracy:  %.3f" % (avgAccuracy[j]))
+        print(" Done")
+
+        #for j, algorithm in enumerate(self.algorithms):
+        #    print("Algorithm '%s' (%i of %i):" % (str(algorithm), j + 1, self.numAlgorithms))
+        #    print("\tTotal Average Cost:      %.3f +/- %.3f" % (np.mean(costs[j]), np.std(costs[j])))
+        #    print("\tTotal Average Accuracy:  %.3f +/- %.3f" % (np.mean(accuracies[j]), np.std(accuracies[j])))
+        #    #print("\tTotal Average Cost:      %.3f" % (avgCost[j]))
+        #    #print("\tTotal Average Accuracy:  %.3f" % (avgAccuracy[j]))
+
+        return [str(algorithm) for algorithm in self.algorithms], accuracies, costs #avgCost, avgAccuracy
 
 if __name__ == "__main__":
     #try:
@@ -284,7 +299,12 @@ if __name__ == "__main__":
 
         sim = Simulation(sys.argv[1], float(sys.argv[2]), sys.argv[3], int(sys.argv[4]),
                         int(sys.argv[5]), int(sys.argv[6]), sys.argv[7], int(sys.argv[8]))
-        sim.execute()
+        algorithmNames, accuracies, costs = sim.execute()
+
+        for j, name in enumerate(algorithmNames):
+            print("Algorithm '%s' (%i of %i):" % (name, j + 1, len(algorithmNames)))
+            print("\tTotal Average Cost:      %.3f +/- %.3f" % (np.mean(costs[j]), np.std(costs[j])))
+            print("\tTotal Average Accuracy:  %.3f +/- %.3f" % (np.mean(accuracies[j]), np.std(accuracies[j])))
 
         print("Done.")
     #except Exception:

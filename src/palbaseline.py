@@ -47,6 +47,15 @@ class PALBaselineRandom(object):
 
         self.currentDataPointIndex = 0
 
+    def __str__(self):
+        """ Return the name of this object.
+
+            Returns:
+                The name of the object.
+        """
+
+        return "PAL (Baseline): Random"
+
     def create(self):
         """ Called before it iterates over the data points. """
 
@@ -101,6 +110,15 @@ class PALBaselineFixed(object):
         self.pal = PAL(dataset, numClasses, oracles, Bc)
 
         self.currentDataPointIndex = 0
+
+    def __str__(self):
+        """ Return the name of this object.
+
+            Returns:
+                The name of the object.
+        """
+
+        return "PAL (Baseline): Fixed (Oracle %i)" % (self.myFavoriteOracle + 1)
 
     def create(self):
         """ Called before it iterates over the data points. """

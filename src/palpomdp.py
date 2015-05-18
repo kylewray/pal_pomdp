@@ -73,6 +73,15 @@ class PALPOMDP(MOPOMDP):
         self.previousAction = None
         self.b = None
 
+    def __str__(self):
+        """ Return the name of this object.
+
+            Returns:
+                The name of the object.
+        """
+
+        return "PAL (POMDP): Value Divided by Cost"
+
     def _entropy(self, Pr):
         """ Compute the entropy of the probability given.
 
@@ -267,14 +276,14 @@ class PALPOMDP(MOPOMDP):
 
         self.horizon = self.pal.get_num_unlabeled() * 2 # Assume each can fail to respond once.
 
+        # Create the numSuccessors, etc.
         self._compute_optimization_variables()
 
-    def solve(self):
-        """ Override the solve function to instead store the policy internally. """
-
+        # At the very end, solve the POMDP.
         self.Gamma, self.pi = super().solve()
 
-        # Initially, there is a collapsed belief over the first state.
+        # Initially, there is a collapsed belief over the first state. This will change as select()
+        # and update() are called during iteration.
         self.b = np.array([0.0 for s in self.states])
         self.b[0] = 1.0
 

@@ -51,6 +51,15 @@ class PALOriginalScenario1(object):
         # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
         self.tUWD = 1.0
 
+    def __str__(self):
+        """ Return the name of this object.
+
+            Returns:
+                The name of the object.
+        """
+
+        return "PAL (Original): Scenario #1"
+
     def create(self):
         """ Called before it iterates over the data points. """
 
@@ -59,12 +68,13 @@ class PALOriginalScenario1(object):
     def select(self):
         """ Select a new data point to label. """
 
+        ULSetMinusQ = [x for x in range(self.pal.get_num_unlabeled()) if x not in self.Q]
+
         # If we have run out of points to label, then select nothing.
-        if self.pal.get_num_unlabeled() == 0:
+        if self.pal.get_num_unlabeled() == 0 or len(ULSetMinusQ) == 0:
             return None, None
 
         hatU = self._estimate_utility()
-        ULSetMinusQ = [x for x in range(self.pal.get_num_unlabeled()) if x not in self.Q]
 
         kStar = np.array([hatU[ULSetMinusQ, k].max() for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_reluctant(k)]).argmax()
         xStar = ULSetMinusQ[hatU[ULSetMinusQ, kStar].argmax()]
@@ -72,8 +82,8 @@ class PALOriginalScenario1(object):
         self.Cround += self.pal.get_cost(xStar, kStar)
         self.Q = self.Q + [xStar]
 
-        print("kStar: %i\t xStar: %i\t ULSetMinusQ:%s" % (kStar, xStar, str(ULSetMinusQ)))
-        print("Q:", self.Q)
+        #print("kStar: %i\t xStar: %i\t ULSetMinusQ:%s" % (kStar, xStar, str(ULSetMinusQ)))
+        #print("Q:", self.Q)
 
         return kStar, self.pal.map_index_for_query(xStar)
 
@@ -199,6 +209,15 @@ class PALOriginalScenario2(object):
         # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
         self.tUWD = 1.0
 
+    def __str__(self):
+        """ Return the name of this object.
+
+            Returns:
+                The name of the object.
+        """
+
+        return "PAL (Original): Scenario #2"
+
     def create(self):
         """ Called before it iterates over the data points. """
 
@@ -218,7 +237,7 @@ class PALOriginalScenario2(object):
 
         self.xStar = xStar
 
-        print("kStar: %i\t xStar: %i" % (kStar, xStar))
+        #print("kStar: %i\t xStar: %i" % (kStar, xStar))
 
         return kStar, self.pal.map_index_for_query(xStar)
 
@@ -326,6 +345,15 @@ class PALOriginalScenario3(object):
         # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
         self.tUWD = 1.0
 
+    def __str__(self):
+        """ Return the name of this object.
+
+            Returns:
+                The name of the object.
+        """
+
+        return "PAL (Original): Scenario #3"
+
     def create(self):
         """ Called before it iterates over the data points. """
 
@@ -345,7 +373,7 @@ class PALOriginalScenario3(object):
 
         self.xStar = xStar
 
-        print("kStar: %i\t xStar: %i" % (kStar, xStar))
+        #print("kStar: %i\t xStar: %i" % (kStar, xStar))
 
         return kStar, self.pal.map_index_for_query(xStar)
 
