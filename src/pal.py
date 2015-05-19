@@ -24,10 +24,14 @@ import sys
 import numpy as np
 import random as rnd
 
+from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
 from sklearn.cluster import KMeans
 
 from oracle import Oracle
+
+
+PAL_MAX_DP_CLUSTER_RATIO = 0.5
 
 
 def sigmoid(x):
@@ -113,6 +117,13 @@ class PAL(object):
         # Given our budget, compute how many data point we will label.
         p = int(Bc / Cavg)
 
+        # Ensure that we don't set a 'p' which is more than the number of data points!
+        if p > int(self.numDataPoints * PAL_MAX_DP_CLUSTER_RATIO):
+            p = int(self.numDataPoints * PAL_MAX_DP_CLUSTER_RATIO)
+
+        #print("Cavg =", Cavg)
+        #print("p =", p)
+
         # If budget is given, then we can only guess a prior of 0.5 or 1.0 probability
         # based on the type of oracle.
         if p == 0:
@@ -153,23 +164,29 @@ class PAL(object):
             #print(self.labels[dataPointIndex])
 
         # Update the set of labeled and unlabeled data points.
-        self.L = list(set(self.L) | {int(cpts[0][0]) for cpts in pts if self.labels[cpts[0][0]] != None})
+        self.L = list(set(self.L) | {int(cpts[0][0]) for cpts in pts if self.labels[int(cpts[0][0])] is not None})
         self.UL = list(set(self.UL) - set(self.L))
 
         #print(self.L)
         #print(self.UL)
 
         # For use in the computation of PrCorrect, we must build a classifier using the data points we have
-        # labeled so far with this oracle.
-        c = LogisticRegression(C=1e5)
-        c.fit(self.dataset[self.L, :], self.labels[self.L])
-        PrLogReg = c.predict_proba(self.dataset)
+        # labeled so far with this oracle. A ValueError arises if we cannot learn a model, which only happens
+        # if we have zero budget for the initial clustering. In this case, we will just use 1.0 for the
+        # probabilities by recognizing PrLogReg is set to None.
+        PrLogReg = None
+        try:
+            c = LogisticRegression(C=1e5)
+            c.fit(self.dataset[self.L, :], self.labels[self.L].astype(int))
+            PrLogReg = c.predict_proba(self.dataset)
+        except ValueError:
+            pass
 
         # After our queries, we can iterate over the entire dataset and compute the probabilities.
         # We do this by iterating over each cluster, then each point within that cluster.
         for cpts in pts:
             # Determine the data point index and distance to more easily read here.
-            clusterDataPointIndex = cpts[0][0]
+            clusterDataPointIndex = int(cpts[0][0])
             minDistance = cpts[0][1]
             maxDistance = cpts[-1][1]
 
@@ -179,15 +196,14 @@ class PAL(object):
                 # This should never happen, but I just want to be sure I catch it if it does.
                 raise Exception()
             elif len(cpts) == 1 or abs(minDistance - maxDistance) < 0.0000001:
-                # To prevent weird distance calculations later, we can just use the raw distance estimate.
-                # This means assigning minDistance to zero and maxDistance to one, so the later
-                # equation simplifies.
-                minDistance = 0.0
-                maxDistance = 1.0
+                # If there is one data point or the distances are insignificant calculations,
+                # then we just use the raw h value below.
+                minDistance = None
+                maxDistance = None
 
             # For each point in this cluster.
             for pt in cpts:
-                dataPointIndex = pt[0]
+                dataPointIndex = int(pt[0])
                 distance = pt[1]
 
                 # First we will compute PrAnswer. This requires defining h, which flips
@@ -195,23 +211,28 @@ class PAL(object):
                 # we have a reluctant oracle.
                 if oracle.reluctant:
                     h = 1.0
-                    if self.labels[clusterDataPointIndex] == None:
+                    if self.labels[clusterDataPointIndex] is None:
                         h = -1.0
 
-                    self.PrAnswer[dataPointIndex, oracleIndex] = sigmoid(h * (1.0 - \
-                                        (distance - minDistance) / (maxDistance - minDistance)))
-                    #print(self.PrAnswer[dataPointIndex, oracleIndex])
+                    z = 1.0
+                    if maxDistance is not None and minDistance is not None:
+                        z = 1.0 - (distance - minDistance) / (maxDistance - minDistance)
+
+                    self.PrAnswer[dataPointIndex, oracleIndex] = sigmoid(h * z)
                 else:
                     self.PrAnswer[dataPointIndex, oracleIndex] = 1.0
 
                 # Next we will compute PrCorrect. This requires defining h, which specifies
                 # a value on [-1, 1] proportional to the max_y PrLogReg[y] using the logistic regression
                 # result above. This only is set if we have a fallible oracle.
-                if oracle.fallible:
+                if oracle.fallible and PrLogReg is not None:
                     h = 2.0 * PrLogReg[dataPointIndex, :].max() - 1.0
 
-                    self.PrCorrect[dataPointIndex, oracleIndex] = sigmoid(h * (1.0 - \
-                                        (distance - minDistance) / (maxDistance - minDistance)))
+                    z = 1.0
+                    if maxDistance is not None and minDistance is not None:
+                        z = 1.0 - (distance - minDistance) / (maxDistance - minDistance)
+
+                    self.PrCorrect[dataPointIndex, oracleIndex] = sigmoid(h * z)
                 else:
                     self.PrCorrect[dataPointIndex, oracleIndex] = 1.0
 
@@ -278,7 +299,7 @@ class PAL(object):
                 The labeled dataset and the corresponding labels, as 2-d and 1-d numpy arrays, respectively.
         """
 
-        return self.dataset[self.L, :].copy(), self.labels[self.L].copy()
+        return self.dataset[self.L, :].copy(), self.labels[self.L].astype(int).copy()
 
     def get_unlabeled_dataset(self):
         """ Get the unlabeled dataset.
@@ -411,7 +432,7 @@ class PAL(object):
                 label           --  The label to assign to this data point.
         """
 
-        self.labels[self.UL[dataPointIndex]] = label
+        self.labels[self.UL[dataPointIndex]] = int(label)
 
         self.ULupdate += [self.UL[dataPointIndex]]
 
@@ -440,12 +461,21 @@ class PAL(object):
 if __name__ == "__main__":
     print("Performing PAL Unit Test...")
 
+    classIndex = 4
+    dataset = np.genfromtxt("../experiments/iris/iris.data", delimiter=',')
+
+    labels = dataset[:, classIndex]
+    nonClassIndexes = [i for i in range(dataset.shape[1]) if i != classIndex]
+    dataset = dataset[:, nonClassIndexes]
+
+    dataset = preprocessing.scale(dataset)
+
     mapping = range(150)
 
-    oracles = [Oracle("../experiments/iris/iris.data", 4, mapping),
-                Oracle("../experiments/iris/iris.data", 4, mapping, reluctant=True),
-                Oracle("../experiments/iris/iris.data", 4, mapping, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, mapping, costVarying=True)]
+    oracles = [Oracle(dataset, labels, classIndex, mapping),
+                Oracle(dataset, labels, classIndex, mapping, reluctant=True),
+                Oracle(dataset, labels, classIndex, mapping, fallible=True),
+                Oracle(dataset, labels, classIndex, mapping, costVarying=True)]
 
     dataset = oracles[0].dataset.copy()
 

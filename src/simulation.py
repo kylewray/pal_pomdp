@@ -25,7 +25,9 @@ import sys
 import numpy as np
 import random as rnd
 
-from sklearn.neighbors import NearestNeighbors
+from sklearn import preprocessing
+from sklearn import metrics
+from sklearn.neighbors import KNeighborsClassifier
 from sklearn.linear_model import LogisticRegression
 from sklearn.svm import SVC
 
@@ -38,12 +40,13 @@ from palbaseline import *
 class Simulation(object):
     """ A class which executes a simulation of all algorithms on a dataset provided (via the file name). """
 
-    def __init__(self, scenario, budget, datasetFile, classIndex, trainSize, testSize, classifier, numIterations):
+    def __init__(self, scenario, budget, clusterBudget, datasetFile, classIndex, trainSize, testSize, classifier, numIterations):
         """ The constructor for the simulation class.
 
             Parameters:
                 scenario        --  The scenario, as a string, defining which group of oracles to use.
                 budget          --  The budget available.
+                clusterBudget   --  The budget for the clustering step. This is divided among all non-normal oracles.
                 datasetFile     --  The dataset filename and path.
                 classIndex      --  The class index in the column of the dataset matrix.
                 trainSize       --  The number of train data points.
@@ -54,6 +57,7 @@ class Simulation(object):
         """
 
         self.B = budget
+        self.Bc = clusterBudget
         self.scenario = scenario
 
         self.datasetFile = datasetFile
@@ -90,7 +94,35 @@ class Simulation(object):
         nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != self.classIndex]
         self.dataset = self.dataset[:, nonClassIndexes]
 
-        # Randomize the data, guaranteeing that the train data has at least one index is selected
+        # Scalarize the dataset.
+        self.dataset = preprocessing.scale(self.dataset)
+
+        # Find the minimum number of data points within a class over all classes.
+        minNumInClass = min([len({i for i in range(self.numDataPoints) if self.labels[i] == k}) for k in range(self.numClasses)])
+
+        # Split the data based on classes, adding to one class only up to this minimum number. Do this
+        # over a random ordering of the dataset to reduce sample bias.
+        splitDataset = [list() for k in range(self.numClasses)]
+        splitLabels = [list() for k in range(self.numClasses)]
+
+        indexes = list(range(self.numDataPoints))
+        rnd.shuffle(indexes)
+
+        for k in range(self.numClasses):
+            for i in indexes:
+                if self.labels[i] == k:
+                    splitDataset[k] += [self.dataset[i, :]]
+                    splitLabels[k] += [self.labels[i]]
+
+                if len(splitDataset[k]) >= minNumInClass:
+                    break
+
+        # Re-define the dataset to include an even split of each class.
+        self.dataset = np.vstack([np.array(d) for d in splitDataset])
+        self.labels = np.array(splitLabels, dtype=int).flatten()
+        self.numDataPoints = self.dataset.shape[0]
+
+        # Now, randomize this data again, guaranteeing that the *train* data has at least one index is selected
         # from each of the classes.
         indexes = list(range(self.numDataPoints))
         rnd.shuffle(indexes)
@@ -126,68 +158,63 @@ class Simulation(object):
 
         # Setup the oracles, one for each algorithm.
         if self.scenario == 'original_1':
-            self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, reluctant=True)] \
+            self.oracles = [[Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, reluctant=True)] \
                         for i in range(self.numAlgorithms)]
-            self.Bc = [1.0, 1.0]
         elif self.scenario == 'original_2':
-            self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, fallible=True)] \
+            self.oracles = [[Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, fallible=True)] \
                         for i in range(self.numAlgorithms)]
-            self.Bc = [1.0, 1.0]
         elif self.scenario == 'original_3':
-            self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, costVarying=True)] \
+            self.oracles = [[Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, costVarying=True)] \
                         for i in range(self.numAlgorithms)]
-            self.Bc = [1.0, 1.0]
         elif self.scenario == 'baseline':
-            self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, reluctant=True),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, fallible=True),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, costVarying=True)] \
+            self.oracles = [[Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, reluctant=True),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, fallible=True),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, costVarying=True)] \
                         for i in range(self.numAlgorithms)]
-            self.Bc = [1.0, 1.0, 1.0, 1.0]
         else:
-            self.oracles = [[Oracle(self.datasetFile, self.classIndex, self.trainIndexes),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, reluctant=True),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, fallible=True),
-                            Oracle(self.datasetFile, self.classIndex, self.trainIndexes, costVarying=True)] \
+            self.oracles = [[Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, reluctant=True),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, fallible=True),
+                            Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, costVarying=True)] \
                         for i in range(self.numAlgorithms)]
-            self.Bc = [1.0, 1.0, 1.0, 1.0]
 
     def _create_algorithms(self):
         """ Create the algorithms, based on the scenario specified. """
 
         if self.scenario == 'original_1':
-            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc]),
+                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
                                PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
         elif self.scenario == 'original_2':
-            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc]),
+                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
                                PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
         elif self.scenario == 'original_3':
-            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
+            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc]),
+                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
                                PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
         elif self.scenario == 'baseline':
-            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
+            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc / 3.0, self.Bc / 3.0, self.Bc / 3.0]),
                                PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[1]),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[2], 0),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 1),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 2),
                                PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[5], 3)]
         else:
-            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], self.Bc),
-                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], self.Bc),
-                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[2], self.Bc),
-                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[3], self.Bc)]
+            self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc / 3.0, self.Bc / 3.0, self.Bc / 3.0]),
+                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc, 0.0, 0.0]),
+                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[2], [0.0, 0.0, self.Bc, 0.0]),
+                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[3], [0.0, 0.0, 0.0, self.Bc])]
 
         # Create and solve the PALPOMDP. Store the policy within the PALPOMDP class and use the custom
         # helper functions later to get the policy and update the belief. Try the same commands for the
@@ -208,17 +235,15 @@ class Simulation(object):
         # labels for the train set, then test the accuracy of the classifier on the test set. The
         # accuracy and cost results are averaged for each.
         for i in range(self.numIterations):
-            print(".", end='')
-            sys.stdout.flush()
-
-            #print("Iteration %i of %i." % (i + 1, self.numIterations))
+            #print(".", end='')
+            print("Iteration %i of %i." % (i + 1, self.numIterations))
 
             # Re-create the split of train/test, the oracles, and algorithms.
             self._initialize()
 
             # For each algorithm, use the Xtrain to compute labels.
             for j, algorithm in enumerate(self.algorithms):
-                #print("Algorithm %i of %i." % (j + 1, self.numAlgorithms))
+                print("Algorithm '%s' (%i of %i):" % (str(algorithm), j + 1, self.numAlgorithms))
 
                 # The agent spent an inital cost for clustering.
                 currentCost = algorithm.pal.Ctotal
@@ -228,7 +253,7 @@ class Simulation(object):
                     # The algorithm selects an oracle and the data point (Xtrain dataset index).
                     action, dataPointIndex = algorithm.select()
 
-                    if action == None:
+                    if action is None:
                         break
 
                     # We query that oracle.
@@ -239,11 +264,15 @@ class Simulation(object):
                     # The algorithm updates internal information.
                     algorithm.update(label, cost)
 
-                    #print("\tAction: %i\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(label), cost, currentCost, self.B))
+                    print("\tAction: %i\t DP Index: %s\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(dataPointIndex), str(label), cost, currentCost, self.B))
 
                 # Perform necessary finishing tasks with this algorithm, then get the
                 # proactively learned labels and dataset.
                 dataset, labels = algorithm.finish()
+
+                #print("Final Algorithm Constructed Dataset:")
+                #print(dataset)
+                #print(labels)
 
                 # Train using k-nearest neighbors, logistic regression, or an SVM.
                 c = None
@@ -258,20 +287,21 @@ class Simulation(object):
                     raise Exception()
 
                 accuracy = 0.0
-                try:
-                    # Attempt to learn a model. This may fail, e.g., the number of data points is
-                    # less than the number of features. This might happen for the baseline oracles,
-                    # such as the one who constantly picks the oracle who is reluctant to answer.
-                    # If it fails, then the accuracy is zero.
-                    c.fit(dataset, labels)
+                #try:
+                # Attempt to learn a model. This may fail, e.g., the number of data points is
+                # less than the number of features. This might happen for the baseline oracles,
+                # such as the one who constantly picks the oracle who is reluctant to answer.
+                # If it fails, then the accuracy is zero.
+                c.fit(dataset, labels)
 
-                    # Predict for each of the data points in the test set.
-                    yprediction = c.predict(self.Xtest)
+                # Predict for each of the data points in the test set.
+                yprediction = c.predict(self.Xtest)
 
-                    # Compute accuracy!
-                    accuracy = np.sum(self.ytest == yprediction) / self.ytest.size
-                except ValueError:
-                    pass
+                # Compute accuracy!
+                #accuracy = np.sum(self.ytest == yprediction) / self.ytest.size
+                accuracy = metrics.accuracy_score(self.ytest, yprediction)
+                #except ValueError:
+                #    pass
 
                 # Update accuracy and cost!
                 accuracies[j] += [accuracy]
@@ -279,10 +309,12 @@ class Simulation(object):
                 #avgAccuracy[j] = (float(i) * avgAccuracy[j] + accuracy) / float(i + 1)
                 #avgCost[j] = (float(i) * avgCost[j] + currentCost) / float(i + 1)
 
-                #print("\tCost:      %.3f" % (currentCost))
-                #print("\tAccuracy:  %.3f" % (accuracy))
+                print("\tCost:      %.3f" % (currentCost))
+                print("\tAccuracy:  %.3f" % (accuracy))
 
-        print(" Done")
+            sys.stdout.flush()
+
+        #print(" Done")
 
         #for j, algorithm in enumerate(self.algorithms):
         #    print("Algorithm '%s' (%i of %i):" % (str(algorithm), j + 1, self.numAlgorithms))
@@ -297,8 +329,8 @@ if __name__ == "__main__":
     #try:
         print("Performing Simulation...")
 
-        sim = Simulation(sys.argv[1], float(sys.argv[2]), sys.argv[3], int(sys.argv[4]),
-                        int(sys.argv[5]), int(sys.argv[6]), sys.argv[7], int(sys.argv[8]))
+        sim = Simulation(sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), sys.argv[4], int(sys.argv[5]),
+                        int(sys.argv[6]), int(sys.argv[7]), sys.argv[8], int(sys.argv[9]))
         algorithmNames, accuracies, costs = sim.execute()
 
         for j, name in enumerate(algorithmNames):
@@ -308,5 +340,5 @@ if __name__ == "__main__":
 
         print("Done.")
     #except Exception:
-    #    print("Syntax:   python simulation.py <scenario> <budget> <dataset> <class index> <train size> <test size> <classifier> <num iterations>")
+    #    print("Syntax:   python simulation.py <scenario> <budget> <cluster budget> <dataset> <class index> <train size> <test size> <classifier> <num iterations>")
 

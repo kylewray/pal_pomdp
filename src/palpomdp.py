@@ -34,6 +34,7 @@ import numpy.linalg as npla
 import random as rnd
 import itertools as it
 
+from sklearn import preprocessing
 from sklearn.svm import SVC
 
 from oracle import Oracle
@@ -102,19 +103,22 @@ class PALPOMDP(MOPOMDP):
 
         return -sum([entropy_func(y) for y in range(Pr.shape[0])])
 
-    def _uncertainty_weighted_density(self, dataPointIndex, PryGxw):
+    def _uncertainty_weighted_density(self, dataPointIndex, PryGw):
         """ Compute the uncertainty weighted density given the data point.
 
             Parameters:
                 dataPointIndex  --  The data point index, from the unlabeled dataset.
-                PryGxw          --  Pr(y | x, w) is the probability of each label for this data point.
+                PryGw           --  Pr(y_k | x_k, w) is the probability of each label for each data point.
 
             Returns:
                 The uncertainty weighted density of the data point provided.
         """
 
+        if PryGw is None:
+            return 1.0
+
         Nx = [i for i in range(self.pal.get_num_unlabeled()) if npla.norm(self.pal.get_unlabeled(i) - self.pal.get_unlabeled(dataPointIndex)) < self.tUWD]
-        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(k)), 2)) * self._entropy(PryGxw) for k in Nx])
+        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(xk)), 2)) * self._entropy(PryGw[xk, :]) for xk in Nx])
 
     def _compute_reward(self, s, a, dataPointIndex):
         """ Compute the reward based on the oracle cost, the budget, and some measure of the value of information.
@@ -146,12 +150,26 @@ class PALPOMDP(MOPOMDP):
         # of the reward. This is based on the 'estimated uncertainty of the current learning function.'
         Xtrain = self.pal.get_unlabeled_dataset()
 
-        # Train using a SVM.
-        c = SVC(kernel='rbf', max_iter=1000, probability=True)
-        c.fit(Xinitial, yinitial)
-        PryGxw = c.predict_proba(Xtrain)[dataPointIndex, :]
+        # Train using a SVM. If this fails due to a value error, it means that the
+        # classifier had too few samples (e.g., zero), meaning that there was 0.0
+        # allocated for the clustering budget. This means we can just use the raw
+        # costs to make decisions, since there is no prior over the data due to
+        # initial labels obtained.
+        PryGw = None
+        try:
+            c = SVC(kernel='rbf', max_iter=1000, probability=True)
+            c.fit(Xinitial, yinitial.astype(int))
+            PryGw = c.predict_proba(Xtrain)
+        except ValueError:
+            pass
 
-        return self._uncertainty_weighted_density(dataPointIndex, PryGxw) / self.pal.get_cost(dataPointIndex, a)
+        U = self._uncertainty_weighted_density(dataPointIndex, PryGw) / self.pal.get_cost(dataPointIndex, a)
+
+        # Special: Weight this by the ratio of correctly labeled data points divided by the number of incorrectly labeled data points.
+        ratio = (self.states[s][0] + 1.0) / (self.states[s][1] + 1.0)
+
+        # Return the final reward!
+        return ratio * U
 
     def create(self):
         """ Create the POMDP once the oracles and their probabilities have been defined. """
@@ -321,7 +339,7 @@ class PALPOMDP(MOPOMDP):
         """
 
         # Update the labeled and unlabeled datasets in the PAL object, as well as the cost.
-        if label != None:
+        if label is not None:
             self.pal.set_label(self.currentDataPointIndex, label)
             self.currentDataPointIndex += 1
 
@@ -329,7 +347,7 @@ class PALPOMDP(MOPOMDP):
 
         # Define the observation.
         obs = None
-        if label != None:
+        if label is not None:
             obs = 0 # The observation was 'True', which is index 0.
         else:
             obs = 1 # The observation was 'False', which is index 1.
@@ -351,153 +369,31 @@ class PALPOMDP(MOPOMDP):
         self.previousAction = None
         self.b = None
 
-#    def simulate(self, Gamma, pi, outputHistory=False):
-#        """ Simulate the execution of a given policy. Optionally output the action-observation history. This
-#            stores the history for use in creating a final classifier.
-#
-#            Parameters:
-#                Gamma           --  The alpha-vectors for the policy.
-#                pi              --  The corresponding actions for each alpha-vector of the policy.
-#                outputHistory   --  Optionally output the action-observation history. Default is False.
-#
-#            Returns:
-#                The labels found while executing the policy.
-#        """
-#
-#        # We know the true state of the system initially.
-#        b = np.array([0.0 for s in range(self.n)])
-#        b[0] = 1.0
-#        s = 0
-#
-#        ylabels = [None for i in range(self.trainSize)]
-#        dataPoint = 0
-#
-#        while dataPoint < self.trainSize:
-#            # Take the action.
-#            v, a = self._max_alpha_vector(b, Gamma, pi)
-#
-#            print("Action: %i" % (a))
-#
-#            # Stochastically transition the state.
-#            sp = None
-#            target = rnd.random()
-#            current = 0.0
-#            for spIter in range(self.n):
-#                current += self.T[s, a, spIter]
-#                if current >= target:
-#                    sp = spIter
-#                    break
-#
-#            # Obtain the label, modeling: non-responsive, success, and failure, respectively.
-#            if self.states[s][0] == self.states[sp][0] and self.states[s][1] == self.states[sp][1]:
-#                ylabels[dataPoint] = None
-#            elif self.states[s][0] + 1 == self.states[sp][0] and self.states[s][1] == self.states[sp][1]:
-#                ylabels[dataPoint] = self.dataset[self.trainIndexes[dataPoint], self.classIndex]
-#                dataPoint += 1
-#            elif self.states[s][0] == self.states[sp][0] and self.states[s][1] + 1 == self.states[sp][1]:
-#                # Failed, so randomly pick one of the other classes.
-#                correctClass = int(self.dataset[self.trainIndexes[dataPoint], self.classIndex])
-#                wrongClasses = list(set(range(self.numClasses)) - {correctClass})
-#                ylabels[dataPoint] = rnd.sample(wrongClasses, 1)[0]
-#                dataPoint += 1
-#
-#            # Stochastically make an observation.
-#            o = None
-#            target = rnd.random()
-#            current = 0.0
-#            for oIter in range(self.z):
-#                current += self.O[a, sp, oIter]
-#                if current >= target:
-#                    o = oIter
-#                    break
-#
-#            # Update the belief point.
-#            bNew = np.array([self.O[a, spIter, o] * np.dot(self.T[:, a, spIter], b) for spIter in range(self.n)])
-#            b = bNew / bNew.sum()
-#
-#            # Transition the state!
-#            s = sp
-#
-#        return np.array(ylabels)
-
-#    def train(self, ytrain):
-#        """ Train the final classifier after a simulation has generated a history of actions and observations.
-#
-#            Parameters:
-#                ytrain  --  The proactively learned train labels.
-#
-#            Returns:
-#                The accuracy of the model.
-#        """
-#
-#        # Split apart the features and class labels.
-#        nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != self.classIndex]
-#        dataset = self.dataset[:, nonClassIndexes]
-#        labels = self.dataset[:, self.classIndex]
-#
-#        # Create the training subset of the data.
-#        Xtrain = dataset[self.trainIndexes, :]
-#
-#        # We do not have these anymore to train. We only have what was simulated as part of the PAL POMDP policy.
-#        #ytrain = labels[self.trainIndexes]
-#
-#        # Train using k-nearest neighbors, logistic regression, or an SVM.
-#        c = None
-#        if self.classifier == 'knn':
-#            c = KNeighborsClassifier(5)
-#        elif self.classifier == 'logistic_regression':
-#            c = LogisticRegression(C=1e5)
-#        elif self.classifier == 'svm':
-#            c = SVC(kernel='rbf', max_iter=1000)
-#        else:
-#            print("Error: Invalid classifier '%s'." % (self.classifier))
-#            raise Exception()
-#        c.fit(Xtrain, ytrain)
-#
-#        # Create the test set.
-#        Xtest = dataset[self.testIndexes, :]
-#        ytest = labels[self.testIndexes]
-#
-#        # Predict for each of these.
-#        yprediction = c.predict(Xtest)
-#
-#        # Compute accuracy!
-#        accuracy = np.sum(ytest == yprediction) / ytest.size
-#
-#        return accuracy
-#
-#    def truth(self):
-#        """ Train a classifier using the *true* labels to compare the accuracy.
-#
-#            Returns:
-#                The accuracy of the model.
-#        """
-#
-#        labels = self.dataset[:, self.classIndex]
-#        ytrain = labels[self.trainIndexes]
-#        return self.train(ytrain)
-#
-#    def test(self):
-#        """ Test the accuracy of the final classifier once it has been trained. """
-#
-#        pass
-
 
 if __name__ == "__main__":
     print("Performing PALPOMDP Unit Test...")
 
-    mapping = range(45)
+    classIndex = 4
+    dataset = np.genfromtxt("../experiments/iris/iris.data", delimiter=',')
 
-    oracles = [Oracle("../experiments/iris/iris_small.data", 4, mapping),
-                Oracle("../experiments/iris/iris_small.data", 4, mapping, reluctant=True),
-                Oracle("../experiments/iris/iris_small.data", 4, mapping, fallible=True),
-                Oracle("../experiments/iris/iris_small.data", 4, mapping, costVarying=True)]
+    labels = dataset[:, classIndex]
+    nonClassIndexes = [i for i in range(dataset.shape[1]) if i != classIndex]
+    dataset = dataset[:, nonClassIndexes]
 
-    dataset = oracles[0].dataset.copy()
+    dataset = preprocessing.scale(dataset)
+
+    mapping = range(40)
+
+    oracles = [Oracle(dataset, labels, classIndex, mapping),
+                Oracle(dataset, labels, classIndex, mapping, reluctant=True),
+                Oracle(dataset, labels, classIndex, mapping, fallible=True),
+                Oracle(dataset, labels, classIndex, mapping, costVarying=True)]
+
+    trainDataset = dataset[0:40]
 
     Bc = [1.0, 1.0, 1.0, 1.0]
 
-    palpomdp = PALPOMDP(dataset, 3, oracles, Bc)
+    palpomdp = PALPOMDP(trainDataset, 3, oracles, Bc)
 
     palpomdp.create()
     print(palpomdp)

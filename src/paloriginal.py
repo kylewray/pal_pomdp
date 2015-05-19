@@ -45,8 +45,8 @@ class PALOriginalScenario1(object):
         self.pal = PAL(dataset, numClasses, oracles, Bc)
 
         self.CT = self.pal.Ctotal
-        self.Cround = 0.0
         self.Q = list()
+        self.Cround = dict()
 
         # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
         self.tUWD = 1.0
@@ -70,16 +70,22 @@ class PALOriginalScenario1(object):
 
         ULSetMinusQ = [x for x in range(self.pal.get_num_unlabeled()) if x not in self.Q]
 
+        # Since we will be dealing with mixes of many oracles, something the original paper didn't deal with, we operate
+        # in favor of the original algorithms by only allowing them to exploit the knowledge they know, i.e., only
+        # the oracles they were designed to operate with. This prevents oracles from causing them to fail, e.g., the reluctant
+        # oracle always returning None for the same data point.
+        validOracles = [k for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_reluctant(k)]
+
         # If we have run out of points to label, then select nothing.
         if self.pal.get_num_unlabeled() == 0 or len(ULSetMinusQ) == 0:
             return None, None
 
         hatU = self._estimate_utility()
 
-        kStar = np.array([hatU[ULSetMinusQ, k].max() for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_reluctant(k)]).argmax()
+        kStar = validOracles[np.array([hatU[ULSetMinusQ, k].max() for k in validOracles]).argmax()]
         xStar = ULSetMinusQ[hatU[ULSetMinusQ, kStar].argmax()]
 
-        self.Cround += self.pal.get_cost(xStar, kStar)
+        self.Cround[xStar] += self.pal.get_cost(xStar, kStar)
         self.Q = self.Q + [xStar]
 
         #print("kStar: %i\t xStar: %i\t ULSetMinusQ:%s" % (kStar, xStar, str(ULSetMinusQ)))
@@ -107,19 +113,22 @@ class PALOriginalScenario1(object):
 
         return -sum([entropy_func(y) for y in range(Pr.shape[0])])
 
-    def _uncertainty_weighted_density(self, dataPointIndex, PryGxw):
+    def _uncertainty_weighted_density(self, dataPointIndex, PryGw):
         """ Compute the uncertainty weighted density given the data point.
 
             Parameters:
                 dataPointIndex  --  The data point index, from the unlabeled dataset.
-                PryGxw          --  Pr(y | x, w) is the probability of each label for this data point.
+                PryGw           --  Pr(y_k | x_k, w) is the probability of each label for each data point.
 
             Returns:
                 The uncertainty weighted density of the data point provided.
         """
 
+        if PryGw is None:
+            return 1.0
+
         Nx = [i for i in range(self.pal.get_num_unlabeled()) if npla.norm(self.pal.get_unlabeled(i) - self.pal.get_unlabeled(dataPointIndex)) < self.tUWD]
-        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(k)), 2)) * self._entropy(PryGxw) for k in Nx])
+        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(xk)), 2)) * self._entropy(PryGw[xk, :]) for xk in Nx])
 
     def _estimate_utility(self):
         """ Estimate the utilities by returning the most up-to-date \hat{U}.
@@ -135,13 +144,17 @@ class PALOriginalScenario1(object):
         Xpredict = self.pal.get_unlabeled_dataset()
 
         # Train using a SVM.
-        c = LogisticRegression(C=1e5)
-        #c = SVC(kernel='rbf', max_iter=1000, probability=True)
-        c.fit(Xinitial, yinitial)
-        PryGw = c.predict_proba(Xpredict)
+        PryGw = None
+        try:
+            c = LogisticRegression(C=1e5)
+            #c = SVC(kernel='rbf', max_iter=1000, probability=True)
+            c.fit(Xinitial, yinitial)
+            PryGw = c.predict_proba(Xpredict)
+        except ValueError:
+            pass
 
         for x in range(self.pal.get_num_unlabeled()):
-            PryGxw = PryGw[x, :]
+            #PryGxw = PryGw[x, :]
 
             for k in range(self.numOracles):
                 if self.pal.is_reluctant(k):
@@ -151,31 +164,34 @@ class PALOriginalScenario1(object):
                     # just a logical oversight in the pseudocode definition, since otherwise it would have effectively divided by zero, or
                     # used the reluctant oracle's cost Ck twice (once as just Ck, then again as Cround which would have equaled Ck) until
                     # Cround finally rose to 2*Ck, 3*Ck, etc.
-                    hatU[x, k] = self.pal.get_pr_answer(x, k) * self._uncertainty_weighted_density(x, PryGxw) / (self.pal.get_cost(x, k) + self.Cround)
+                    try:
+                        hatU[x, k] = self.pal.get_pr_answer(x, k) * self._uncertainty_weighted_density(x, PryGw) / (self.pal.get_cost(x, k) + self.Cround[x])
+                    except KeyError:
+                        self.Cround[x] = 0.0
+                        hatU[x, k] = self.pal.get_pr_answer(x, k) * self._uncertainty_weighted_density(x, PryGw) / (self.pal.get_cost(x, k) + self.Cround[x])
                 else:
-                    hatU[x, k] = self.pal.get_pr_answer(x, k) * self._uncertainty_weighted_density(x, PryGxw) / self.pal.get_cost(x, k)
+                    hatU[x, k] = self.pal.get_pr_answer(x, k) * self._uncertainty_weighted_density(x, PryGw) / self.pal.get_cost(x, k)
 
         return hatU
 
     def update(self, label, cost):
         """ Record the label and cost. """
 
-        if label != None:
+        if label is not None:
             # Note: self.Q[-1] = xStar, which is the selected data point index in the unordered dataset.
             self.pal.set_label(self.Q[-1], label)
             self.pal.update()
 
-            self.CT += self.Cround
-            self.Cround = 0.0
             self.Q = list()
+
+        self.CT += cost #self.Cround[self.Q[-1]]
 
     def finish(self):
         """ Perform any final finishing computation once the budget is spent or data points have all been labeled. Then, return the labeled dataset. """
 
         self.pal.update()
 
-        self.CT += self.Cround
-        self.Cround = 0.0
+        #self.CT += self.Cround[self.Q[-1]]
         self.Q = list()
 
         return self.pal.get_labeled_dataset()
@@ -184,7 +200,6 @@ class PALOriginalScenario1(object):
         """ Reset the variables controlling iteration. This does not reset the policy.  """
 
         self.CT = self.pal.Ctotal
-        self.Cround = 0.0
         self.Q = list()
 
 
@@ -226,13 +241,19 @@ class PALOriginalScenario2(object):
     def select(self):
         """ Select a new data point to label. """
 
+        # Since we will be dealing with mixes of many oracles, something the original paper didn't deal with, we operate
+        # in favor of the original algorithms by only allowing them to exploit the knowledge they know, i.e., only
+        # the oracles they were designed to operate with. This prevents oracles from causing them to fail, e.g., the reluctant
+        # oracle always returning None for the same data point.
+        validOracles = [k for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_fallible(k)]
+
         # If we have run out of points to label, then select nothing.
         if self.pal.get_num_unlabeled() == 0:
             return None, None
 
         hatU = self._estimate_utility()
 
-        kStar = np.array([hatU[:, k].max() for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_fallible(k)]).argmax()
+        kStar = validOracles[np.array([hatU[:, k].max() for k in validOracles]).argmax()]
         xStar = hatU[:, kStar].argmax()
 
         self.xStar = xStar
@@ -261,19 +282,22 @@ class PALOriginalScenario2(object):
 
         return -sum([entropy_func(y) for y in range(Pr.shape[0])])
 
-    def _uncertainty_weighted_density(self, dataPointIndex, PryGxw):
+    def _uncertainty_weighted_density(self, dataPointIndex, PryGw):
         """ Compute the uncertainty weighted density given the data point.
 
             Parameters:
                 dataPointIndex  --  The data point index, from the unlabeled dataset.
-                PryGxw          --  Pr(y | x, w) is the probability of each label for this data point.
+                PryGw           --  Pr(y_k | x_k, w) is the probability of each label for each data point.
 
             Returns:
                 The uncertainty weighted density of the data point provided.
         """
 
+        if PryGw is None:
+            return 1.0
+
         Nx = [i for i in range(self.pal.get_num_unlabeled()) if npla.norm(self.pal.get_unlabeled(i) - self.pal.get_unlabeled(dataPointIndex)) < self.tUWD]
-        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(k)), 2)) * self._entropy(PryGxw) for k in Nx])
+        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(xk)), 2)) * self._entropy(PryGw[xk, :]) for xk in Nx])
 
     def _estimate_utility(self):
         """ Estimate the utilities by returning the most up-to-date \hat{U}.
@@ -289,23 +313,27 @@ class PALOriginalScenario2(object):
         Xpredict = self.pal.get_unlabeled_dataset()
 
         # Train using a SVM.
-        c = LogisticRegression(C=1e5)
-        #c = SVC(kernel='rbf', max_iter=1000, probability=True)
-        c.fit(Xinitial, yinitial)
-        PryGw = c.predict_proba(Xpredict)
+        PryGw = None
+        try:
+            c = LogisticRegression(C=1e5)
+            #c = SVC(kernel='rbf', max_iter=1000, probability=True)
+            c.fit(Xinitial, yinitial)
+            PryGw = c.predict_proba(Xpredict)
+        except ValueError:
+            pass
 
         for x in range(self.pal.get_num_unlabeled()):
-            PryGxw = PryGw[x, :]
+            #PryGxw = PryGw[x, :]
 
             for k in range(self.numOracles):
-                hatU[x, k] = self.pal.get_pr_correct(x, k) * self._uncertainty_weighted_density(x, PryGxw) / self.pal.get_cost(x, k)
+                hatU[x, k] = self.pal.get_pr_correct(x, k) * self._uncertainty_weighted_density(x, PryGw) / self.pal.get_cost(x, k)
 
         return hatU
 
     def update(self, label, cost):
         """ Record the label and cost. """
 
-        if label != None:
+        if label is not None:
             self.pal.set_label(self.xStar, label)
             self.pal.update()
 
@@ -362,13 +390,19 @@ class PALOriginalScenario3(object):
     def select(self):
         """ Select a new data point to label. """
 
+        # Since we will be dealing with mixes of many oracles, something the original paper didn't deal with, we operate
+        # in favor of the original algorithms by only allowing them to exploit the knowledge they know, i.e., only
+        # the oracles they were designed to operate with. This prevents oracles from causing them to fail, e.g., the reluctant
+        # oracle always returning None for the same data point.
+        validOracles = [k for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_cost_varying(k)]
+
         # If we have run out of points to label, then select nothing.
         if self.pal.get_num_unlabeled() == 0:
             return None, None
 
         hatU = self._estimate_utility()
 
-        kStar = np.array([hatU[:, k].max() for k in range(self.numOracles) if self.pal.is_normal(k) or self.pal.is_cost_varying(k)]).argmax()
+        kStar = validOracles[np.array([hatU[:, k].max() for k in validOracles]).argmax()]
         xStar = hatU[:, kStar].argmax()
 
         self.xStar = xStar
@@ -397,19 +431,22 @@ class PALOriginalScenario3(object):
 
         return -sum([entropy_func(y) for y in range(Pr.shape[0])])
 
-    def _uncertainty_weighted_density(self, dataPointIndex, PryGxw):
+    def _uncertainty_weighted_density(self, dataPointIndex, PryGw):
         """ Compute the uncertainty weighted density given the data point.
 
             Parameters:
                 dataPointIndex  --  The data point index, from the unlabeled dataset.
-                PryGxw          --  Pr(y | x, w) is the probability of each label for this data point.
+                PryGw           --  Pr(y_k | x_k, w) is the probability of each label for each data point.
 
             Returns:
                 The uncertainty weighted density of the data point provided.
         """
 
+        if PryGw is None:
+            return 1.0
+
         Nx = [i for i in range(self.pal.get_num_unlabeled()) if npla.norm(self.pal.get_unlabeled(i) - self.pal.get_unlabeled(dataPointIndex)) < self.tUWD]
-        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(k)), 2)) * self._entropy(PryGxw) for k in Nx])
+        return sum([np.exp(-pow(npla.norm(self.pal.get_unlabeled(dataPointIndex) - self.pal.get_unlabeled(xk)), 2)) * self._entropy(PryGw[xk, :]) for xk in Nx])
 
     def _estimate_utility(self):
         """ Estimate the utilities by returning the most up-to-date \hat{U}.
@@ -425,23 +462,27 @@ class PALOriginalScenario3(object):
         Xpredict = self.pal.get_unlabeled_dataset()
 
         # Train using a SVM.
-        c = LogisticRegression(C=1e5)
-        #c = SVC(kernel='rbf', max_iter=1000, probability=True)
-        c.fit(Xinitial, yinitial)
-        PryGw = c.predict_proba(Xpredict)
+        PryGw = None
+        try:
+            c = LogisticRegression(C=1e5)
+            #c = SVC(kernel='rbf', max_iter=1000, probability=True)
+            c.fit(Xinitial, yinitial)
+            PryGw = c.predict_proba(Xpredict)
+        except ValueError:
+            pass
 
         for x in range(self.pal.get_num_unlabeled()):
-            PryGxw = PryGw[x, :]
+            #PryGxw = PryGw[x, :]
 
             for k in range(self.numOracles):
-                hatU[x, k] = self._uncertainty_weighted_density(x, PryGxw) - self.pal.get_cost(x, k)
+                hatU[x, k] = self._uncertainty_weighted_density(x, PryGw) - self.pal.get_cost(x, k)
 
         return hatU
 
     def update(self, label, cost):
         """ Record the label and cost. """
 
-        if label != None:
+        if label is not None:
             self.pal.set_label(self.xStar, label)
             self.pal.update()
 

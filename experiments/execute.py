@@ -33,22 +33,34 @@ from simulation import Simulation
 thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 
-datasets = [{"prefix": "iris", "Bmin": 10, "Bmax": 10, "Bstep": 2,
-                "filename": "../experiments/iris/iris.data", "classIndex": 4,
-                "trainSize": 30, "testSize": 100,
-                "classifier": "svm", "numIterations": 1}]
+datasets = [
+            {'prefix': "iris", 'Bmin': 1, 'Bmax': 20, 'Bstep': 2, 'Bc': 1.0,
+                'filename': "../experiments/iris/iris.data", 'classIndex': 4,
+                'trainSize': 50, 'testSize': 100,
+                'classifier': "svm", 'numIterations': 10},
+            {'prefix': 'adult', 'Bmin': 1, 'Bmax': 25, 'Bstep': 2, 'Bc': 5.0,
+                'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
+                'trainSize': 50, 'testSize': 1000,
+                'classifier': "svm", 'numIterations': 10},
+            {'prefix': "spambase", 'Bmin': 1, 'Bmax': 20, 'Bstep': 2, 'Bc': 5.0,
+                'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
+                'trainSize': 50, 'testSize': 1000,
+                'classifier': "svm", 'numIterations': 10}
+            ]
 
-scenarios = ["original_1", "original_2", "original_3", "baseline", "everything"]
+#scenarios = ["original_1", "original_2", "original_3", "baseline", "everything"]
 
-for dataset in datasets:
-    for scenario in scenarios:
+def execute(scenario):
+    for dataset in datasets:
         data = list()
         budgets = range(dataset["Bmin"], dataset["Bmax"] + dataset["Bstep"], dataset["Bstep"])
 
         for B in budgets:
             B = float(B)
 
-            sim = Simulation(scenario, B, dataset["filename"], dataset["classIndex"],
+            print("Executing Simulation for Budget %.2f..." % (B))
+
+            sim = Simulation(scenario, B, dataset['Bc'], dataset["filename"], dataset["classIndex"],
                                 dataset["trainSize"], dataset["testSize"],
                                 dataset["classifier"], dataset["numIterations"])
             names, accuracies, costs = sim.execute()
@@ -59,10 +71,26 @@ for dataset in datasets:
             for j in range(len(names)):
                 data[j] += ["%.4f" % (np.mean(accuracies[j])), "%.4f" % (np.std(accuracies[j])), "%.4f" % (np.mean(costs[j])), "%.4f" % (np.std(costs[j]))]
 
-        with open(os.path.join(thisFilePath, sys.argv[1], "_".join([dataset["prefix"], scenario])) + ".csv", "a") as f:
+        with open(os.path.join(thisFilePath, "results", "_".join([dataset["prefix"], scenario])) + ".csv", "a") as f:
             f.write("Algorithm," + ",".join(list(map(str, budgets))) + ",\n")
             for algorithm in data:
                 for d in algorithm:
                     f.write("%s," % (d))
                 f.write("\n")
+
+if __name__ == "__main__":
+    scenario = None
+    try:
+        scenario = sys.argv[1]
+    except Exception:
+        print("Syntax:          python execute.py <scenario>")
+        print("Scenarios:")
+        print("  default        Compares a PAL POMDP and all three 'Scenario' PALs with all four oracles.")
+        print("  original_1     Compares a POMDP, the Original 'Scenario #1', and baseline PALs with two oracles: Normal and Reluctant.")
+        print("  original_2     Compares a POMDP, the Original 'Scenario #2', and baseline PALs with two oracles: Normal and Fallible.")
+        print("  original_3     Compares a POMDP, the Original 'Scenario #3', and baseline PALs with two oracles: Normal and Cost Varying.")
+        print("  baseline       Compares a PAL POMDP and baseline PALs with all four oracles.")
+
+    if scenario is not None:
+        execute(scenario)
 

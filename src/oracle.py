@@ -23,26 +23,28 @@
 import random as rnd
 import numpy as np
 
+from sklearn import preprocessing
 from sklearn.linear_model import LogisticRegression
 
 
 ORACLE_DEFAULT_COST = 0.5
-ORACLE_DEFAULT_COST_RATIO = 0.75
+ORACLE_DEFAULT_COST_RATIO = 0.25
 #ORACLE_MIN_COST = ORACLE_DEFAULT_COST * ORACLE_DEFAULT_COST_RATIO * ORACLE_DEFAULT_COST_RATIO
-ORACLE_DATA_SUBSET = 0.05
+ORACLE_DATA_SUBSET = 0.01
 ORACLE_UNCERTAINTY_THRESHOLD = 0.75
 
 
 class Oracle(object):
     """ An oracle class which has the *true* probabilities, and is able to simulate them given a data point. """
 
-    def __init__(self, datasetFile, classIndex, mapping, reluctant=False, fallible=False, costVarying=False,
+    def __init__(self, dataset, labels, classIndex, mapping, reluctant=False, fallible=False, costVarying=False,
                 dataSubset=ORACLE_DATA_SUBSET, uncertaintyThreshold=ORACLE_UNCERTAINTY_THRESHOLD,
                 defaultCost=ORACLE_DEFAULT_COST, costRatio=ORACLE_DEFAULT_COST_RATIO):
         """ The constructor of the Oracle.
 
             Parameters:
-                datasetFile             --  The filename and path of the dataset to use.
+                dataset                 --  The true values in the dataset from the simulation itself.
+                labels                  --  The true labels from the dataset from the simulation itself.
                 classIndex              --  The class index within the dataset matrix.
                 mapping                 --  Maps indexes of Xtrain to those of the true dataset.
                 reluctant               --  This oracle varies in its ability to answer. Default is False.
@@ -61,13 +63,22 @@ class Oracle(object):
         self.mapping = list(mapping)
 
         # Load the dataset.
-        self.dataset = np.genfromtxt(datasetFile, delimiter=',')
-        self.numDataPoints = np.shape(self.dataset)[0]
-        self.numClasses = len(set(self.dataset[:, classIndex]))
+        #self.dataset = np.genfromtxt(datasetFile, delimiter=',')
+        #self.numDataPoints = np.shape(self.dataset)[0]
+        #self.numClasses = len(set(self.dataset[:, classIndex]))
 
-        self.labels = self.dataset[:, classIndex]
-        nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != classIndex]
-        self.dataset = self.dataset[:, nonClassIndexes]
+        #self.labels = self.dataset[:, classIndex]
+        #nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != classIndex]
+        #self.dataset = self.dataset[:, nonClassIndexes]
+
+        # Scalarize the dataset.
+        #self.dataset = preprocessing.scale(self.dataset)
+
+        self.dataset = dataset.copy()
+        self.labels = labels.copy()
+
+        self.numDataPoints = self.dataset.shape[0]
+        self.numClasses = len(set(self.labels))
 
         # Handle each of the special traits that make the oracle interesting.
         cost = defaultCost
@@ -120,7 +131,7 @@ class Oracle(object):
 
         # Train the oracle. Then predict the probabilities over the entire dataset.
         c = LogisticRegression(C=1e5)
-        c.fit(self.dataset[indexes, :], self.labels[indexes])
+        c.fit(self.dataset[indexes, :], self.labels[indexes].astype(int))
         Pr = c.predict_proba(self.dataset)
 
         # Return the set of indexes, over the entire dataset, which have a predicted probability
@@ -182,12 +193,12 @@ class Oracle(object):
         dataPointIndex = self.mapping[dataPointIndex]
 
         # First, see if the oracle answers at all based on the data point being in the 'blacklist'.
-        if self.failToAnswer != None and dataPointIndex in self.failToAnswer:
+        if self.failToAnswer is not None and dataPointIndex in self.failToAnswer:
             return None, self.costs[dataPointIndex]
 
         # Now, the oracle responds; however, if the data point is in the randomClass list, then
         # randomly select a class label instead.
-        if self.randomClass != None and dataPointIndex in self.randomClass:
+        if self.randomClass is not None and dataPointIndex in self.randomClass:
             return rnd.randint(0, self.numClasses - 1), self.costs[dataPointIndex]
 
         # If the function made it here, then return the correct label and the cost.
@@ -210,12 +221,21 @@ class Oracle(object):
 if __name__ == "__main__":
     print("Performing Oracle Unit Test...")
 
+    classIndex = 4
+    dataset = np.genfromtxt("../experiments/iris/iris.data", delimiter=',')
+
+    labels = dataset[:, classIndex]
+    nonClassIndexes = [i for i in range(dataset.shape[1]) if i != classIndex]
+    dataset = dataset[:, nonClassIndexes]
+
+    dataset = preprocessing.scale(dataset)
+
     mapping = range(150)
 
-    oracles = [Oracle("../experiments/iris/iris.data", 4, mapping),
-                Oracle("../experiments/iris/iris.data", 4, mapping, reluctant=True),
-                Oracle("../experiments/iris/iris.data", 4, mapping, fallible=True),
-                Oracle("../experiments/iris/iris.data", 4, mapping, costVarying=True)]
+    oracles = [Oracle(dataset, labels, classIndex, mapping),
+                Oracle(dataset, labels, classIndex, mapping, reluctant=True),
+                Oracle(dataset, labels, classIndex, mapping, fallible=True),
+                Oracle(dataset, labels, classIndex, mapping, costVarying=True)]
 
     for i in range(150):
         for oi, o in enumerate(oracles):
