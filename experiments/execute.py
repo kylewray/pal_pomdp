@@ -34,15 +34,15 @@ thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 
 datasets = [
-            {'prefix': "iris", 'Bmin': 2, 'Bmax': 3, 'Bstep': 2, 'Bc': 1.0,
+            {'prefix': "iris", 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 1.0,
                 'filename': "../experiments/iris/iris.data", 'classIndex': 4,
                 'trainSize': 50, 'testSize': 100,
                 'classifier': "svm", 'numIterations': 25},
-            {'prefix': 'adult', 'Bmin': 2, 'Bmax': 30, 'Bstep': 2, 'Bc': 5.0,
+            {'prefix': 'adult', 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 5.0,
                 'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
                 'trainSize': 50, 'testSize': 1000,
                 'classifier': "svm", 'numIterations': 25},
-            {'prefix': "spambase", 'Bmin': 2, 'Bmax': 30, 'Bstep': 2, 'Bc': 5.0,
+            {'prefix': "spambase", 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 5.0,
                 'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
                 'trainSize': 50, 'testSize': 1000,
                 'classifier': "svm", 'numIterations': 25}
