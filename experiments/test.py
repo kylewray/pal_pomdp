@@ -2,6 +2,7 @@ import sys
 import random as rnd
 import numpy as np
 
+from sklearn import preprocessing
 from sklearn import metrics
 from sklearn.neighbors import KNeighborsClassifier
 from sklearn.svm import SVC
@@ -19,6 +20,8 @@ fullDataset = fullDataset[indexes, :]
 
 dataset = fullDataset[:, [i for i in range(fullDataset.shape[1]) if i != classIndex]]
 labels = fullDataset[:, classIndex]
+
+dataset = preprocessing.scale(dataset)
 
 Xtrain = dataset[:trainSize, :]
 ytrain = labels[:trainSize]

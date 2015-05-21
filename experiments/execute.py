@@ -34,21 +34,20 @@ thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 
 datasets = [
-            {'prefix': "iris", 'Bmin': 1, 'Bmax': 20, 'Bstep': 2, 'Bc': 1.0,
+            {'prefix': "iris", 'Bmin': 2, 'Bmax': 3, 'Bstep': 2, 'Bc': 1.0,
                 'filename': "../experiments/iris/iris.data", 'classIndex': 4,
                 'trainSize': 50, 'testSize': 100,
-                'classifier': "svm", 'numIterations': 10},
-            {'prefix': 'adult', 'Bmin': 1, 'Bmax': 25, 'Bstep': 2, 'Bc': 5.0,
+                'classifier': "svm", 'numIterations': 25},
+            {'prefix': 'adult', 'Bmin': 2, 'Bmax': 30, 'Bstep': 2, 'Bc': 5.0,
                 'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
                 'trainSize': 50, 'testSize': 1000,
-                'classifier': "svm", 'numIterations': 10},
-            {'prefix': "spambase", 'Bmin': 1, 'Bmax': 20, 'Bstep': 2, 'Bc': 5.0,
+                'classifier': "svm", 'numIterations': 25},
+            {'prefix': "spambase", 'Bmin': 2, 'Bmax': 30, 'Bstep': 2, 'Bc': 5.0,
                 'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
                 'trainSize': 50, 'testSize': 1000,
-                'classifier': "svm", 'numIterations': 10}
+                'classifier': "svm", 'numIterations': 25}
             ]
 
-#scenarios = ["original_1", "original_2", "original_3", "baseline", "everything"]
 
 def execute(scenario):
     for dataset in datasets:
@@ -86,9 +85,16 @@ if __name__ == "__main__":
         print("Syntax:          python execute.py <scenario>")
         print("Scenarios:")
         print("  default        Compares a PAL POMDP and all three 'Scenario' PALs with all four oracles.")
-        print("  original_1     Compares a POMDP, the Original 'Scenario #1', and baseline PALs with two oracles: Normal and Reluctant.")
-        print("  original_2     Compares a POMDP, the Original 'Scenario #2', and baseline PALs with two oracles: Normal and Fallible.")
-        print("  original_3     Compares a POMDP, the Original 'Scenario #3', and baseline PALs with two oracles: Normal and Cost Varying.")
+        print("  original_1     Compares a POMDP, the 'Scenario #1', and baseline PALs with two oracles with cluster-based probabilities: Normal and Reluctant.")
+        print("  original_2     Compares a POMDP, the 'Scenario #2', and baseline PALs with two oracles with cluster-based probabilities: Normal and Fallible.")
+        print("  original_3     Compares a POMDP, the 'Scenario #3', and baseline PALs with two oracles with cluster-based probabilities: Normal and Cost Varying.")
+        print("  original_all   Compares a PAL POMDP, the all 'Scenario' PALs, and a random PAL with all three oracles with cluster-based probabilities: Reluctant, Fallible, and Cost Varying.")
+        print("  known_1        Compares a POMDP, the 'Scenario #1', and baseline PALs with two oracles with known probabilities: Normal and Reluctant.")
+        print("  known_2        Compares a POMDP, the 'Scenario #2', and baseline PALs with two oracles with known probabilities: Normal and Fallible.")
+        print("  known_3        Compares a POMDP, the 'Scenario #3', and baseline PALs with two oracles with known probabilities: Normal and Cost Varying.")
+        print("  known_all      Compares a PAL POMDP, the all 'Scenario' PALs, and a random PAL with all three oracles with known probabilities: Reluctant, Fallible, and Cost Varying.")
+        print("  expanded       Compares a PAL POMDP and all three 'Scenario' PALs with four oracles combining two and three types with known probabilities.")
+        print("  insanity       Compares a PAL POMDP and all three 'Scenario' PALs with four oracles combining all three types simultaneously with known probabilities.")
         print("  baseline       Compares a PAL POMDP and baseline PALs with all four oracles.")
 
     if scenario is not None:

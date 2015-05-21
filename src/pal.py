@@ -107,6 +107,14 @@ class PAL(object):
                 Bc          --  The budget for this oracle.
         """
 
+        # If this oracle is of type 'known', then we know the Pr(answer|x), Pr(correct|x), and C(x).
+        if oracle.get_type() == 'known':
+            for i in range(self.numDataPoints):
+                self.PrAnswer[i, oracleIndex] = oracle.get_pr_answer(i)
+                self.PrCorrect[i, oracleIndex] = oracle.get_pr_correct(i)
+                self.Cost[i, oracleIndex] = oracle.get_cost(i)
+            return 0.0
+
         # It is free to query for the costs, so just ask the oracle how much each data point is.
         for i in range(self.numDataPoints):
             self.Cost[i, oracleIndex] = oracle.get_cost(i)

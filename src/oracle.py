@@ -38,6 +38,7 @@ class Oracle(object):
     """ An oracle class which has the *true* probabilities, and is able to simulate them given a data point. """
 
     def __init__(self, dataset, labels, classIndex, mapping, reluctant=False, fallible=False, costVarying=False,
+                oracleType='unknown', PrAnswerRange=None, PrCorrectRange=None, CostRange=None,
                 dataSubset=ORACLE_DATA_SUBSET, uncertaintyThreshold=ORACLE_UNCERTAINTY_THRESHOLD,
                 defaultCost=ORACLE_DEFAULT_COST, costRatio=ORACLE_DEFAULT_COST_RATIO):
         """ The constructor of the Oracle.
@@ -51,6 +52,13 @@ class Oracle(object):
                 fallible                --  This oracle varies in its ability to answer correctly. Default
                                             is False.
                 costVarying             --  This oracle varies its cost. Default is False.
+                oracleType              --  The probability type of oracle: 'known' or 'unknown'. Default is 'unknown'.
+                PrAnswerRange           --  The range (min, max) for the random number generator for Pr(answer|x).
+                                            If assigned None, then it is 1.0 for all data points. Default is None.
+                PrCorrectRange          --  The range (min, max) for the random number generator for Pr(correct|x).
+                                            If assigned None, then it is 1.0 for all data points. Default is None.
+                CostRange               --  The range (min, max) for the random number generator for C(x).
+                                            If assigned None, then it is the fixed cost for all data points. Default is None.
                 dataSubset              --  The subset ratio of the dataset for determining probabilities. Default
                                             is ORACLE_DATA_SUBSET.
                 uncertaintyThreshold    --  The uncertainty threshold for determining indexes. Default is
@@ -60,19 +68,8 @@ class Oracle(object):
                                             Default is ORACLE_DEFAULT_COST_RATIO.
         """
 
+        self.oracleType = oracleType
         self.mapping = list(mapping)
-
-        # Load the dataset.
-        #self.dataset = np.genfromtxt(datasetFile, delimiter=',')
-        #self.numDataPoints = np.shape(self.dataset)[0]
-        #self.numClasses = len(set(self.dataset[:, classIndex]))
-
-        #self.labels = self.dataset[:, classIndex]
-        #nonClassIndexes = [i for i in range(self.dataset.shape[1]) if i != classIndex]
-        #self.dataset = self.dataset[:, nonClassIndexes]
-
-        # Scalarize the dataset.
-        #self.dataset = preprocessing.scale(self.dataset)
 
         self.dataset = dataset.copy()
         self.labels = labels.copy()
@@ -83,24 +80,38 @@ class Oracle(object):
         # Handle each of the special traits that make the oracle interesting.
         cost = defaultCost
         if reluctant:
-            self.failToAnswer = self._random_train(dataSubset, uncertaintyThreshold)
+            if self.oracleType == 'unknown':
+                self.failToAnswer = self._random_train(dataSubset, uncertaintyThreshold)
+            else:
+                self.PrAnswer = np.array([rnd.uniform(PrAnswerRange[0], PrAnswerRange[1]) for i in range(self.numDataPoints)])
             cost *= costRatio
         else:
             self.failToAnswer = None
+            self.PrAnswer = None
 
         self.reluctant = reluctant
 
         if fallible:
-            self.randomClass = self._random_train(dataSubset, uncertaintyThreshold)
+            if self.oracleType == 'unknown':
+                self.randomClass = self._random_train(dataSubset, uncertaintyThreshold)
+            else:
+                self.PrCorrect = np.array([rnd.uniform(PrCorrectRange[0], PrCorrectRange[1]) for i in range(self.numDataPoints)])
             cost *= costRatio
         else:
             self.randomClass = None
+            self.PrCorrect = None
 
         self.fallible = fallible
 
         self.costs = np.array([cost for i in range(self.numDataPoints)])
         if costVarying:
-            self._compute_varied_costs(dataSubset, defaultCost, costRatio)
+            if self.oracleType == 'unknown':
+                self._compute_varied_costs(dataSubset, defaultCost, costRatio)
+            else:
+                if CostRange is not None:
+                    self.costs = np.array([rnd.uniform(CostRange[0], CostRange[1]) for i in range(self.numDataPoints)])
+                else:
+                    self.costs = np.array([cost for i in range(self.numDataPoints)])
 
         self.costVarying = costVarying
 
@@ -192,17 +203,79 @@ class Oracle(object):
 
         dataPointIndex = self.mapping[dataPointIndex]
 
-        # First, see if the oracle answers at all based on the data point being in the 'blacklist'.
-        if self.failToAnswer is not None and dataPointIndex in self.failToAnswer:
-            return None, self.costs[dataPointIndex]
+        # Depending on the type of oracle, use a different calculation for the query.
+        if self.oracleType == 'unknown':
+            # First, see if the oracle answers at all based on the data point being in the 'blacklist'.
+            if self.failToAnswer is not None and dataPointIndex in self.failToAnswer:
+                return None, self.costs[dataPointIndex]
 
-        # Now, the oracle responds; however, if the data point is in the randomClass list, then
-        # randomly select a class label instead.
-        if self.randomClass is not None and dataPointIndex in self.randomClass:
-            return rnd.randint(0, self.numClasses - 1), self.costs[dataPointIndex]
+            # Now, the oracle responds; however, if the data point is in the randomClass list, then
+            # randomly select a class label instead.
+            if self.randomClass is not None and dataPointIndex in self.randomClass:
+                return rnd.randint(0, self.numClasses - 1), self.costs[dataPointIndex]
 
-        # If the function made it here, then return the correct label and the cost.
-        return int(self.labels[dataPointIndex]), self.costs[dataPointIndex]
+            # If the function made it here, then return the correct label and the cost.
+            return int(self.labels[dataPointIndex]), self.costs[dataPointIndex]
+        else:
+            # If a random number yields that the oracle will not answer, then do not but still pay the cost.
+            if self.PrAnswer is not None and rnd.random() >= self.PrAnswer[dataPointIndex]:
+                return None, self.costs[dataPointIndex]
+
+            # Now, the oracle responds; however, if a random number yields that the oracle will be incorrect,
+            # then randomly pick one of the *other* classes and pay the cost.
+            if self.PrCorrect is not None and rnd.random() >= self.PrCorrect[dataPointIndex]:
+                wrongClasses = [i for i in range(self.numClasses) if i != int(self.labels[dataPointIndex])]
+                return rnd.choice(wrongClasses), self.costs[dataPointIndex]
+
+            # If the function made it here, then return the correct label and the cost.
+            return int(self.labels[dataPointIndex]), self.costs[dataPointIndex]
+
+    def get_type(self):
+        """ Return the type of this oracle: 'known' or 'unknown'.
+
+            Returns:
+                The type of the oracle.
+        """
+
+        return self.oracleType
+
+    def get_pr_answer(self, dataPointIndex):
+        """ Return the probability that a particular data point will be answered. This requires the oracle to be of type 'known'.
+
+            Parameters:
+                dataPointIndex  --  The index of the data point within the Xtrain dataset.
+
+            Returns:
+                The probability the oracle will respond, or None if this is not of type 'known'.
+        """
+
+        if self.oracleType == 'known':
+            if self.PrAnswer is not None:
+                dataPointIndex = self.mapping[dataPointIndex]
+                return self.PrAnswer[dataPointIndex]
+            else:
+                return 1.0
+        else:
+            return None
+
+    def get_pr_correct(self, dataPointIndex):
+        """ Return the probability that a particular data point will be correct. This requires the oracle to be of type 'known'.
+
+            Parameters:
+                dataPointIndex  --  The index of the data point within the Xtrain dataset.
+
+            Returns:
+                The probability the oracle will be correct, or None if this is not of type 'known'.
+        """
+
+        if self.oracleType == 'known':
+            if self.PrCorrect is not None:
+                dataPointIndex = self.mapping[dataPointIndex]
+                return self.PrCorrect[dataPointIndex]
+            else:
+                return 1.0
+        else:
+            return None
 
     def get_cost(self, dataPointIndex):
         """ Return how much a particular data point will cost to label.
@@ -234,8 +307,14 @@ if __name__ == "__main__":
 
     oracles = [Oracle(dataset, labels, classIndex, mapping),
                 Oracle(dataset, labels, classIndex, mapping, reluctant=True),
+                Oracle(dataset, labels, classIndex, mapping, reluctant=True,
+                        oracleType='known', PrAnswerRange=[0.25, 1.0]),
                 Oracle(dataset, labels, classIndex, mapping, fallible=True),
-                Oracle(dataset, labels, classIndex, mapping, costVarying=True)]
+                Oracle(dataset, labels, classIndex, mapping, fallible=True,
+                        oracleType='known', PrCorrectRange=[0.25, 1.0]),
+                Oracle(dataset, labels, classIndex, mapping, costVarying=True),
+                Oracle(dataset, labels, classIndex, mapping, costVarying=True,
+                        oracleType='known', CostRange=[0.01, 1.0])]
 
     for i in range(150):
         for oi, o in enumerate(oracles):
