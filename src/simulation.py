@@ -217,7 +217,7 @@ class Simulation(object):
         elif self.scenario == 'insanity':
             self.oracles = [[#Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes),
                             Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, reluctant=True, fallible=True, costVarying=True,
-                                    oracleType='known', PrAnswerRange=[0.25, 1.0], PrCorrectRange=[0.25, 1.0], CostRange=[0.25, 1.0]),
+                                    oracleType='known', PrAnswerRange=[0.25, 1.0], PrCorrectRange=[0.25, 1.0], CostRange=[0.01, 1.0]),
                             Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, reluctant=True, fallible=True, costVarying=True,
                                     oracleType='known', PrAnswerRange=[0.25, 1.0], PrCorrectRange=[0.25, 1.0], CostRange=[0.01, 1.0]),
                             Oracle(self.dataset, self.labels, self.classIndex, self.trainIndexes, reluctant=True, fallible=True, costVarying=True,
