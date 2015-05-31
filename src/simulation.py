@@ -296,10 +296,19 @@ class Simulation(object):
             algorithm.create()
 
     def execute(self):
-        """ Execute the entire simulation. """
+        """ Execute the entire simulation.
+
+            Returns:
+                names       --  The names of the algorithms.
+                accuracies  --  The average accuracies of each corresponding algorithm.
+                costs       --  The average costs spent by each corresponding algorithm.
+                queries     --  The average number of queries made by each corresponding algorithm.
+        """
 
         accuracies = [list() for i in range(self.numAlgorithms)]
         costs = [list() for i in range(self.numAlgorithms)]
+        queries = [list() for i in range(self.numAlgorithms)]
+
         #avgAccuracy = [0.0 for i in range(self.numAlgorithms)]
         #avgCost = [0.0 for i in range(self.numAlgorithms)]
 
@@ -321,6 +330,9 @@ class Simulation(object):
                 # The agent spent an inital cost for clustering.
                 currentCost = algorithm.pal.Ctotal
 
+                # The number of queries by the algorithm.
+                numQueries = 0
+
                 # If the algorithm ever runs out of the budget, stop.
                 while currentCost < self.B:
                     # The algorithm selects an oracle and the data point (Xtrain dataset index).
@@ -336,6 +348,8 @@ class Simulation(object):
 
                     # The algorithm updates internal information.
                     algorithm.update(label, cost)
+
+                    numQueries += 1
 
                     print("\tAction: %i\t DP Index: %s\t Label: %s\t Cost: %.3f\t Spent: %.3f\t Budget: %.3f" % (action, str(dataPointIndex), str(label), cost, currentCost, self.B))
 
@@ -387,9 +401,11 @@ class Simulation(object):
                 # Update accuracy and cost!
                 accuracies[j] += [accuracy]
                 costs[j] += [currentCost]
+                queries[j] += [numQueries]
 
                 print("\tCost:      %.3f" % (currentCost))
                 print("\tAccuracy:  %.3f" % (accuracy))
+                print("\tQueries:   %i" % (numQueries))
 
             sys.stdout.flush()
 
@@ -402,7 +418,7 @@ class Simulation(object):
         #    #print("\tTotal Average Cost:      %.3f" % (avgCost[j]))
         #    #print("\tTotal Average Accuracy:  %.3f" % (avgAccuracy[j]))
 
-        return [str(algorithm) for algorithm in self.algorithms], accuracies, costs #avgCost, avgAccuracy
+        return [str(algorithm) for algorithm in self.algorithms], accuracies, costs, queries #avgCost, avgAccuracy
 
 if __name__ == "__main__":
     #try:
@@ -410,12 +426,13 @@ if __name__ == "__main__":
 
         sim = Simulation(sys.argv[1], float(sys.argv[2]), float(sys.argv[3]), sys.argv[4], int(sys.argv[5]),
                         int(sys.argv[6]), int(sys.argv[7]), sys.argv[8], int(sys.argv[9]))
-        algorithmNames, accuracies, costs = sim.execute()
+        algorithmNames, accuracies, costs, queries = sim.execute()
 
         for j, name in enumerate(algorithmNames):
             print("Algorithm '%s' (%i of %i):" % (name, j + 1, len(algorithmNames)))
             print("\tTotal Average Cost (Median):      %.3f +/- %.3f\t(%.3f)" % (np.mean(costs[j]), np.std(costs[j]), np.median(costs[j])))
             print("\tTotal Average Accuracy (Median):  %.3f +/- %.3f\t(%.3f)" % (np.mean(accuracies[j]), np.std(accuracies[j]), np.median(accuracies[j])))
+            print("\tTotal Average Queries (Median):   %.3f +/- %.3f\t(%.3f)" % (np.mean(queries[j]), np.std(queries[j]), np.median(queries[j])))
 
         print("Done.")
     #except Exception:

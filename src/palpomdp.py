@@ -44,14 +44,15 @@ from pal import PAL
 class PALPOMDP(MOPOMDP):
     """ A class which models a proactive learning agent. """
 
-    def __init__(self, dataset, numClasses, oracles, Bc):
+    def __init__(self, dataset, numClasses, oracles, Bc, maxBatchSize=30):
         """ The constructor of the PAL POMDP class.
 
             Parameters:
-                dataset     --  The complete dataset without labels. (No labels are included; must query oracles.)
-                numClasses  --  The number of classes.
-                oracles     --  A list of the Oracle objects to use.
-                Bc          --  A list of budgets for how much we can spend for each oracle in initial clustering.
+                dataset         --  The complete dataset without labels. (No labels are included; must query oracles.)
+                numClasses      --  The number of classes.
+                oracles         --  A list of the Oracle objects to use.
+                Bc              --  A list of budgets for how much we can spend for each oracle in initial clustering.
+                maxBatchSize    --  Optionally, the maximum number of data points in a POMDP batch. Default is 40.
         """
 
         super().__init__()
@@ -66,11 +67,15 @@ class PALPOMDP(MOPOMDP):
         # The threshold for including data points in Nx as part of computing the uncertainty weighted density.
         self.tUWD = 1.0
 
+        # The maximum size of each batch run.
+        self.maxBatchSize = maxBatchSize
+
         # Variables used for executing policies.
         self.Gamma = None
         self.pi = None
 
         self.currentDataPointIndex = 0
+        self.batchDataPointOrder = list(range(self.maxBatchSize))
         self.previousAction = None
         self.b = None
 
@@ -124,7 +129,7 @@ class PALPOMDP(MOPOMDP):
         """ Compute the reward based on the oracle cost, the budget, and some measure of the value of information.
 
             Parameters:
-                s               --  The state index.
+                s               --  The state index. If None, then the 'ratio' ((c+1)/(r+1)) will not be included.
                 a               --  The action index.
                 dataPointIndex  --  The data point index within the unlabeled data set.
 
@@ -139,7 +144,7 @@ class PALPOMDP(MOPOMDP):
         # want to get stuck picking that oracle on that data point forever. The original paper's model
         # is a bit impractical in this regard, and our model is a proof-of-concept, which can be easily
         # adapted in any manner to accommodate *anything*; it is a POMDP after all.
-        if self.states[s][2] == False and self.pal.is_reluctant(a):
+        if s is not None and self.states[s][2] == False and self.pal.is_reluctant(a):
             return 0.0
 
         # Create the initial training subset of the data.
@@ -166,7 +171,9 @@ class PALPOMDP(MOPOMDP):
         U = self._uncertainty_weighted_density(dataPointIndex, PryGw) / self.pal.get_cost(dataPointIndex, a)
 
         # Special: Weight this by the ratio of correctly labeled data points divided by the number of incorrectly labeled data points.
-        ratio = (self.states[s][0] + 1.0) / (self.states[s][1] + 1.0)
+        ratio = 1.0
+        if s is not None:
+            ratio = (self.states[s][0] + 1.0) / (self.states[s][1] + 1.0)
 
         # Return the final reward!
         return ratio * U
@@ -174,17 +181,20 @@ class PALPOMDP(MOPOMDP):
     def create(self):
         """ Create the POMDP once the oracles and their probabilities have been defined. """
 
+        # First, determine which data points to use in this batch and their ordering.
+        self._compute_batch_order()
+
         # Create the states.
         self.states = list() #['Initial'] #, 'Success', 'Failure']
-        for i in range(self.pal.get_num_unlabeled()):
+        for i in range(self.maxBatchSize):
             # For this data point (i.e., dataset[i, :]) create the corresponding states as a tuple:
             # < num correct, num incorrect, oracle responded >
             for numCorrect in range(i + 1):
                 self.states += [(numCorrect, i - numCorrect, True), (numCorrect, i - numCorrect, False)]
 
         # The last set of states for the last data point only has true, which self-loops, since we are done.
-        for numCorrect in range(self.pal.get_num_unlabeled() + 1):
-            self.states += [(numCorrect, self.pal.get_num_unlabeled() - numCorrect, True)]
+        for numCorrect in range(self.maxBatchSize + 1):
+            self.states += [(numCorrect, self.maxBatchSize - numCorrect, True)]
 
         self.n = len(self.states)
 
@@ -199,7 +209,7 @@ class PALPOMDP(MOPOMDP):
                 for sp, statePrime in enumerate(self.states):
                     #print(state, action, statePrime)
 
-                    if state[0] + state[1] == self.pal.get_num_unlabeled() and state == statePrime:
+                    if state[0] + state[1] == self.maxBatchSize and state == statePrime:
                         self.T[s][a][sp] = 1.0
 
                     elif state[0] == statePrime[0] and state[1] == statePrime[1] and \
@@ -208,7 +218,7 @@ class PALPOMDP(MOPOMDP):
                         # If no transition occurred and this was the first time the oracle did not respond,
                         # then we assign the probability of no answer (response) which equals
                         # 1 - Pr(answer | oracle, data point).
-                        dataPointIndex = state[0] + state[1]
+                        dataPointIndex = self.batchDataPointOrder[state[0] + state[1]]
                         self.T[s][a][sp] = 1.0 - self.pal.get_pr_answer(dataPointIndex, action)
 
                     elif (state[0] + 1 == statePrime[0] and state[1] == statePrime[1]) and \
@@ -217,7 +227,7 @@ class PALPOMDP(MOPOMDP):
                         # If a successful labeling occurred, meaning that only the number correct increased,
                         # then we assign the probability of a correct labeling for this oracle, which equals
                         # Pr(answer | oracle, data point of s [not sp]) * Pr(correct | oracle, data point)
-                        dataPointIndex = state[0] + state[1]
+                        dataPointIndex = self.batchDataPointOrder[state[0] + state[1]]
                         self.T[s][a][sp] = self.pal.get_pr_answer(dataPointIndex, action) * self.pal.get_pr_correct(dataPointIndex, action)
 
                     elif (state[0] == statePrime[0] and state[1] + 1 == statePrime[1]) and \
@@ -226,11 +236,11 @@ class PALPOMDP(MOPOMDP):
                         # If a failure of labeling occurred, meaning that only the number incorrect increased,
                         # then we assign the probability of an incorrect labeling for this oracle, which equals
                         # Pr(answer | oracle, data point of s [not sp]) * (1 - Pr(correct | oracle, data point))
-                        dataPointIndex = state[0] + state[1]
+                        dataPointIndex = self.batchDataPointOrder[state[0] + state[1]]
                         self.T[s][a][sp] = self.pal.get_pr_answer(dataPointIndex, action) * (1.0 - self.pal.get_pr_correct(dataPointIndex, action))
 
                 #print(sum([self.T[s][a][sp] for sp in range(len(states))]))
-                    
+
         self.T = np.array(self.T)
 
         # Create the observations.
@@ -259,7 +269,7 @@ class PALPOMDP(MOPOMDP):
             self.B += [b]
 
         # Add the mixed belief among each collection of states which are "probabilistically entangled."
-        for i in range(self.pal.get_num_unlabeled()):
+        for i in range(self.maxBatchSize):
             numNonZeroBelief = float(i + 1)
 
             for answered in [True, False]:
@@ -284,15 +294,19 @@ class PALPOMDP(MOPOMDP):
             dataPointIndex = (state[0] + state[1] - 1) + 1
 
             # If this was the last data point row (which are absorbing states), then no cost.
-            if dataPointIndex == self.pal.get_num_unlabeled():
+            if dataPointIndex == self.maxBatchSize:
                 continue
+
+            # Convert the data point index to the unlabeled dataset, instead of the batch index, after
+            # doing the above check.
+            dataPointIndex = self.batchDataPointOrder[dataPointIndex]
 
             for a, action in enumerate(self.actions):
                 self.R[0][s][a] = self._compute_reward(s, a, dataPointIndex)
 
         self.R = np.array(self.R)
 
-        self.horizon = self.pal.get_num_unlabeled() * 2 # Assume each can fail to respond once.
+        self.horizon = self.maxBatchSize * 2 # Assume each can fail to respond once, i.e., P_r^{min} = 0.5.
 
         # Create the numSuccessors, etc.
         self._compute_optimization_variables()
@@ -300,13 +314,44 @@ class PALPOMDP(MOPOMDP):
         # At the very end, solve the POMDP.
         self.Gamma, self.pi = super().solve()
 
+        #print(self.Gamma)
+        #print(self.pi)
+
         # Initially, there is a collapsed belief over the first state. This will change as select()
         # and update() are called during iteration.
         self.b = np.array([0.0 for s in self.states])
         self.b[0] = 1.0
 
-        #print(self.Gamma)
-        #print(self.pi)
+    def _compute_batch_order(self):
+        """ Compute the data points to use in this batch and their ordering. """
+
+        # First, compute the \hat{U} values.
+        hatU = np.array([[self.pal.get_pr_answer(i, k) * self.pal.get_pr_correct(i, k) * self._compute_reward(None, k, i) \
+                                for k in range(self.pal.get_num_oracles())] \
+                            for i in range(self.pal.get_num_unlabeled())])
+
+        # Next, compute the batch ordering. Note: these are indexes into the unlabeled dataset.
+        self.batchDataPointOrder = list()
+
+        notBatch = list(range(self.pal.get_num_unlabeled()))
+
+        for i in range(self.maxBatchSize):
+            #print("Batch Index", i, "with notBatch", notBatch)
+
+            # If we run out of data points, then we only need to plan for the remaining unlabeled data points, which
+            # means we can set a smaller maxBatch size and use the ordering.
+            if len(notBatch) == 0:
+                self.maxBatchSize = len(self.batchDataPointOrder)
+                break
+
+            kStar = np.array([hatU[notBatch, k].max() for k in range(self.pal.get_num_oracles())]).argmax()
+            xStar = notBatch[hatU[notBatch, kStar].argmax()]
+
+            self.batchDataPointOrder += [xStar]
+
+            notBatch = list(set(notBatch) - {xStar})
+
+        #print("batchDataPointOrder =", self.batchDataPointOrder)
 
     def _max_alpha_vector(self):
         """ Return the best value and action at the current internal belief point, using the internally stored policy. """
@@ -322,13 +367,14 @@ class PALPOMDP(MOPOMDP):
                 currentDataPointIndex   --  The index of the data point in the *Xtrain* dataset.
         """
 
-        # If we have run out of points to label, then select nothing.
+        # If we have run out of points to label, then select nothing. Note: We do not map the currentDataPointIndex
+        # here since we are comparing lengths.
         if self.currentDataPointIndex == self.pal.get_num_unlabeled():
             return None, None
 
         val, action = self._max_alpha_vector()
         self.previousAction = action
-        return action, self.pal.map_index_for_query(self.currentDataPointIndex)
+        return action, self.pal.map_index_for_query(self.batchDataPointOrder[self.currentDataPointIndex])
 
     def update(self, label, cost):
         """ Update the belief with this new information.
@@ -340,10 +386,21 @@ class PALPOMDP(MOPOMDP):
 
         # Update the labeled and unlabeled datasets in the PAL object, as well as the cost.
         if label is not None:
-            self.pal.set_label(self.currentDataPointIndex, label)
+            self.pal.set_label(self.batchDataPointOrder[self.currentDataPointIndex], label)
             self.currentDataPointIndex += 1
 
-        #print("Current Data Point Index: %i" % (self.currentDataPointIndex))
+            # If we have run out of data points in this batch, then add all the labeled data points
+            # to the dataset, remove those from the unlabeled dataset, and re-create a new POMDP
+            # with the remaining data points. Note: we do not need to map since we are comparing lengths.
+            if self.currentDataPointIndex % self.maxBatchSize == 0:
+                #print("Exceeded batch size! Computing a new POMDP!")
+                self.reset()
+                self.pal.update()
+                self.create()
+                return
+
+        #print("Current Data Point Indexes: (Batch = %i, Unlabeled Dataset = %i)" % \
+        #            (self.currentDataPointIndex, self.batchDataPointOrder[self.currentDataPointIndex]))
 
         # Define the observation.
         obs = None
@@ -366,6 +423,7 @@ class PALPOMDP(MOPOMDP):
         """ Reset the variables controlling iteration. This does not reset the policy.  """
 
         self.currentDataPointIndex = 0
+        self.batchDataPointOrder = list(range(self.maxBatchSize))
         self.previousAction = None
         self.b = None
 
@@ -382,14 +440,14 @@ if __name__ == "__main__":
 
     dataset = preprocessing.scale(dataset)
 
-    mapping = range(40)
+    mapping = range(50)
 
     oracles = [Oracle(dataset, labels, classIndex, mapping),
                 Oracle(dataset, labels, classIndex, mapping, reluctant=True),
                 Oracle(dataset, labels, classIndex, mapping, fallible=True),
                 Oracle(dataset, labels, classIndex, mapping, costVarying=True)]
 
-    trainDataset = dataset[0:40]
+    trainDataset = dataset[0:50]
 
     Bc = [1.0, 1.0, 1.0, 1.0]
 

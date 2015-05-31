@@ -34,18 +34,37 @@ thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 
 datasets = [
-            {'prefix': "iris", 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 1.0,
-                'filename': "../experiments/iris/iris.data", 'classIndex': 4,
-                'trainSize': 40, 'testSize': 100,
-                'classifier': "svm", 'numIterations': 10},
-            {'prefix': 'adult', 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 5.0,
+            #{'prefix': "iris", 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 1.0,
+            #    'filename': "../experiments/iris/iris.data", 'classIndex': 4,
+            #    'trainSize': 40, 'testSize': 100,
+            #    'classifier': "svm", 'numIterations': 10},
+
+            {'prefix': 'adult', 'Bmin': 3, 'Bmax': 9, 'Bstep': 3, 'Bc': 5.0,
                 'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
-                'trainSize': 40, 'testSize': 1000,
+                'trainSize': 100, 'testSize': 10000,
                 'classifier': "svm", 'numIterations': 10},
-            {'prefix': "spambase", 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 5.0,
+            {'prefix': "spambase", 'Bmin': 3, 'Bmax': 9, 'Bstep': 3, 'Bc': 5.0,
                 'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
-                'trainSize': 40, 'testSize': 1000,
-                'classifier': "svm", 'numIterations': 10}
+                'trainSize': 100, 'testSize': 10000,
+                'classifier': "svm", 'numIterations': 10},
+
+            #{'prefix': 'adult', 'Bmin': 12, 'Bmax': 15, 'Bstep': 3, 'Bc': 5.0,
+            #    'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
+            #    'trainSize': 200, 'testSize': 10000,
+            #    'classifier': "svm", 'numIterations': 10},
+            #{'prefix': "spambase", 'Bmin': 12, 'Bmax': 15, 'Bstep': 3, 'Bc': 5.0,
+            #    'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
+            #    'trainSize': 200, 'testSize': 10000,
+            #    'classifier': "svm", 'numIterations': 10},
+
+            #{'prefix': 'adult', 'Bmin': 18, 'Bmax': 21, 'Bstep': 3, 'Bc': 5.0,
+            #    'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
+            #    'trainSize': 300, 'testSize': 10000,
+            #    'classifier': "svm", 'numIterations': 10},
+            #{'prefix': "spambase", 'Bmin': 18, 'Bmax': 21, 'Bstep': 3, 'Bc': 5.0,
+            #    'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
+            #    'trainSize': 300, 'testSize': 10000,
+            #    'classifier': "svm", 'numIterations': 10},
             ]
 
 
@@ -62,15 +81,15 @@ def execute(scenario):
             sim = Simulation(scenario, B, dataset['Bc'], dataset["filename"], dataset["classIndex"],
                                 dataset["trainSize"], dataset["testSize"],
                                 dataset["classifier"], dataset["numIterations"])
-            names, accuracies, costs = sim.execute()
+            names, accuracies, costs, queries = sim.execute()
 
             if len(data) == 0:
                 data = [[name] for name in names]
 
             for j in range(len(names)):
-                data[j] += ["%.4f" % (np.mean(accuracies[j])), "%.4f" % (np.std(accuracies[j])), "%.4f" % (np.mean(costs[j])), "%.4f" % (np.std(costs[j]))]
+                data[j] += ["%.4f" % (np.mean(accuracies[j])), "%.4f" % (np.std(accuracies[j])), "%.4f" % (np.mean(costs[j])), "%.4f" % (np.std(costs[j])), "%.4f" % (np.mean(queries[j])), "%.4f" % (np.std(queries[j]))]
 
-        with open(os.path.join(thisFilePath, "results", "_".join([dataset["prefix"], scenario])) + ".csv", "a") as f:
+        with open(os.path.join(thisFilePath, "results", "_".join([dataset["prefix"], scenario, str(dataset["Bmin"]), str(dataset["Bmax"])])) + ".csv", "a") as f:
             f.write("Algorithm," + ",".join(list(map(str, budgets))) + ",\n")
             for algorithm in data:
                 for d in algorithm:
