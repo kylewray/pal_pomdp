@@ -34,11 +34,6 @@ thisFilePath = os.path.dirname(os.path.realpath(__file__))
 
 
 datasets = [
-            #{'prefix': "iris", 'Bmin': 3, 'Bmax': 30, 'Bstep': 3, 'Bc': 1.0,
-            #    'filename': "../experiments/iris/iris.data", 'classIndex': 4,
-            #    'trainSize': 40, 'testSize': 100,
-            #    'classifier': "svm", 'numIterations': 10},
-
             {'prefix': 'adult', 'Bmin': 3, 'Bmax': 9, 'Bstep': 3, 'Bc': 5.0,
                 'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
                 'trainSize': 100, 'testSize': 10000,
@@ -48,23 +43,23 @@ datasets = [
                 'trainSize': 100, 'testSize': 10000,
                 'classifier': "svm", 'numIterations': 10},
 
-            #{'prefix': 'adult', 'Bmin': 12, 'Bmax': 15, 'Bstep': 3, 'Bc': 5.0,
-            #    'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
-            #    'trainSize': 200, 'testSize': 10000,
-            #    'classifier': "svm", 'numIterations': 10},
-            #{'prefix': "spambase", 'Bmin': 12, 'Bmax': 15, 'Bstep': 3, 'Bc': 5.0,
-            #    'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
-            #    'trainSize': 200, 'testSize': 10000,
-            #    'classifier': "svm", 'numIterations': 10},
+            {'prefix': 'adult', 'Bmin': 12, 'Bmax': 15, 'Bstep': 3, 'Bc': 5.0,
+                'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
+                'trainSize': 200, 'testSize': 10000,
+                'classifier': "svm", 'numIterations': 10},
+            {'prefix': "spambase", 'Bmin': 12, 'Bmax': 15, 'Bstep': 3, 'Bc': 5.0,
+                'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
+                'trainSize': 200, 'testSize': 10000,
+                'classifier': "svm", 'numIterations': 10},
 
-            #{'prefix': 'adult', 'Bmin': 18, 'Bmax': 21, 'Bstep': 3, 'Bc': 5.0,
-            #    'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
-            #    'trainSize': 300, 'testSize': 10000,
-            #    'classifier': "svm", 'numIterations': 10},
-            #{'prefix': "spambase", 'Bmin': 18, 'Bmax': 21, 'Bstep': 3, 'Bc': 5.0,
-            #    'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
-            #    'trainSize': 300, 'testSize': 10000,
-            #    'classifier': "svm", 'numIterations': 10},
+            {'prefix': 'adult', 'Bmin': 18, 'Bmax': 21, 'Bstep': 3, 'Bc': 5.0,
+                'filename': "../experiments/adult/adult_converted.data", 'classIndex': 14,
+                'trainSize': 300, 'testSize': 10000,
+                'classifier': "svm", 'numIterations': 10},
+            {'prefix': "spambase", 'Bmin': 18, 'Bmax': 21, 'Bstep': 3, 'Bc': 5.0,
+                'filename': "../experiments/spambase/spambase.data", 'classIndex': 57,
+                'trainSize': 300, 'testSize': 10000,
+                'classifier': "svm", 'numIterations': 10},
             ]
 
 

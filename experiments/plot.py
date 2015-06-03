@@ -42,6 +42,12 @@ nameMap = {"PAL (POMDP): Value Divided by Cost": "PAL POMDP",
             "PAL (Baseline): Fixed (Oracle 3)": "Fixed (o3)",
             "PAL (Baseline): Fixed (Oracle 4)": "Fixed (o4)"}
 
+scenarioMap = {"original_1": "Original #1",
+                "original_2": "Original #2",
+                "original_3": "Original #3",
+                "insanity": "Complex #1",
+                "expanded": "Complex #2"}
+
 colorMap = {"PAL (POMDP): Value Divided by Cost": "b",
             "PAL (Original): Scenario #1": "g",
             "PAL (Original): Scenario #2": "r",
@@ -133,11 +139,11 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
         queries[name] = np.array(queries[name])[order]
 
     # Determine the minimum y-value.
-    ymin = int((min([accuracies[name].min() for name in names]) - 0.2) * 10.0) / 10.0
-    ymax = int((max([accuracies[name].max() for name in names]) + 0.2) * 10.0) / 10.0
+    ymin = int((min([accuracies[name].min() for name in names]) - 0.1) * 10.0) / 10.0
+    ymax = int((max([accuracies[name].max() for name in names]) + 0.1) * 10.0) / 10.0
 
     # With the loaded data, create plots!
-    plt.title((dataset + " " + scenario + ": Accuracy").title())
+    plt.title((dataset + " " + scenarioMap[scenario] + " Accuracy").title())
     plt.hold(True)
 
     plt.xlabel("Budget")
@@ -150,6 +156,12 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
     plt.hlines(np.arange(0.0, 1.0 + 0.1, 0.1), budgets.min() - 1.0, budgets.max() + 1.0, colors=[(0.7, 0.7, 0.7)])
 
     for name in names:
+        # Note: We match or improve upon these simple baselines, and they just make the already small
+        # plots more confusing in the paper. You can plot them if you want though by commenting this
+        # if statement.
+        if name == "PAL (Baseline): Fixed (Oracle 1)" or name == "PAL (Baseline): Fixed (Oracle 2)":
+            continue
+
         plt.plot(budgets, accuracies[name], label=nameMap[name],
                     linestyle=linestyleMap[name], linewidth=4,
                     marker=markerMap[name], markersize=14,

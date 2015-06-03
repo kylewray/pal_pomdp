@@ -44,7 +44,7 @@ from pal import PAL
 class PALPOMDP(MOPOMDP):
     """ A class which models a proactive learning agent. """
 
-    def __init__(self, dataset, numClasses, oracles, Bc, maxBatchSize=30):
+    def __init__(self, dataset, numClasses, oracles, Bc, maxBatchSize=40):
         """ The constructor of the PAL POMDP class.
 
             Parameters:
@@ -144,8 +144,9 @@ class PALPOMDP(MOPOMDP):
         # want to get stuck picking that oracle on that data point forever. The original paper's model
         # is a bit impractical in this regard, and our model is a proof-of-concept, which can be easily
         # adapted in any manner to accommodate *anything*; it is a POMDP after all.
+        epsilon = 1.0
         if s is not None and self.states[s][2] == False and self.pal.is_reluctant(a):
-            return 0.0
+            epsilon = 0.001
 
         # Create the initial training subset of the data.
         Xinitial, yinitial = self.pal.get_labeled_dataset()
@@ -176,7 +177,7 @@ class PALPOMDP(MOPOMDP):
             ratio = (self.states[s][0] + 1.0) / (self.states[s][1] + 1.0)
 
         # Return the final reward!
-        return ratio * U
+        return ratio * U * epsilon
 
     def create(self):
         """ Create the POMDP once the oracles and their probabilities have been defined. """

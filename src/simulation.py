@@ -69,13 +69,13 @@ class Simulation(object):
         self.numIterations = numIterations
 
         if self.scenario == 'original_1' or self.scenario == 'original_2' or self.scenario == 'original_3':
-            self.numAlgorithms = 5
+            self.numAlgorithms = 1 #5
         elif self.scenario == 'known_1' or self.scenario == 'known_2' or self.scenario == 'known_3':
             self.numAlgorithms = 5
         elif self.scenario == 'original_all' or self.scenario == 'known_all':
             self.numAlgorithms = 5
         elif self.scenario == 'expanded' or self.scenario == 'insanity':
-            self.numAlgorithms = 5
+            self.numAlgorithms = 1 #5
         elif self.scenario == 'baseline':
             self.numAlgorithms = 6
         else:
@@ -243,22 +243,25 @@ class Simulation(object):
 
         if self.scenario == 'original_1' or self.scenario == 'known_1':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc]),
-                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
-                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
-                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
-                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
+                               #PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
+                               #PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
+                               #PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
+                               #PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)
+                               ]
         elif self.scenario == 'original_2' or self.scenario == 'known_2':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc]),
-                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
-                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
-                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
-                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
+                               #PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
+                               #PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
+                               #PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
+                               #PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)
+                               ]
         elif self.scenario == 'original_3' or self.scenario == 'known_3':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc]),
-                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
-                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
-                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
-                               PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)]
+                               #PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[1], [0.0, self.Bc]),
+                               #PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[2]),
+                               #PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[3], 0),
+                               #PALBaselineFixed(self.Xtrain, self.numClasses, self.oracles[4], 1)
+                               ]
         elif self.scenario == 'original_all' or self.scenario == 'known_all':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [self.Bc / 3.0, self.Bc / 3.0, self.Bc / 3.0]),
                                PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [self.Bc, 0.0, 0.0]),
@@ -272,10 +275,11 @@ class Simulation(object):
                                ]
         elif self.scenario == 'expanded' or self.scenario == 'insanity':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
-                               PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
-                               PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[2], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
-                               PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[3], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
-                               PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[4])]
+                               #PALOriginalScenario1(self.Xtrain, self.numClasses, self.oracles[1], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
+                               #PALOriginalScenario2(self.Xtrain, self.numClasses, self.oracles[2], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
+                               #PALOriginalScenario3(self.Xtrain, self.numClasses, self.oracles[3], [self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0, self.Bc / 4.0]),
+                               #PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[4])
+                               ]
         elif self.scenario == 'baseline':
             self.algorithms = [PALPOMDP(self.Xtrain, self.numClasses, self.oracles[0], [0.0, self.Bc / 3.0, self.Bc / 3.0, self.Bc / 3.0]),
                                PALBaselineRandom(self.Xtrain, self.numClasses, self.oracles[1]),
