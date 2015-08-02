@@ -26,6 +26,7 @@ import csv
 import os
 
 import numpy as np
+import matplotlib as mpl
 import matplotlib.pyplot as plt
 
 
@@ -141,6 +142,11 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
     # Determine the minimum y-value.
     ymin = int((min([accuracies[name].min() for name in names]) - 0.1) * 10.0) / 10.0
     ymax = int((max([accuracies[name].max() for name in names]) + 0.1) * 10.0) / 10.0
+
+    # Set the font to be larger.
+    font = {'family': 'normal', 'weight': 'bold', 'size': 22}
+    mpl.rc('font', **font)
+    plt.gcf().subplots_adjust(bottom=0.15)
 
     # With the loaded data, create plots!
     plt.title((dataset + " " + scenarioMap[scenario] + " Accuracy").title())
