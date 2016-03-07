@@ -88,6 +88,7 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
     budgets = list()
     names = list()
     accuracies = dict()
+    stdDevs = dict()
     costs = dict()
     queries = dict()
 
@@ -120,6 +121,13 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
                             accuracies[current] += [float(element)]
                         except KeyError:
                             accuracies[current] = [float(element)]
+                    elif (j - 1) % 6 == 1:
+                        try:
+                            #stdDevs[current] += [float(element)]
+                            stdDevs[current] += [1.96 * float(element) / np.sqrt(10)]
+                        except KeyError:
+                            #stdDevs[current] = [float(element)]
+                            stdDevs[current] = [1.96 * float(element) / np.sqrt(10)]
                     elif (j - 1) % 6 == 2:
                         try:
                             costs[current] += [float(element)]
@@ -136,6 +144,7 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
     budgets = np.array(budgets)[order]
     for name in names:
         accuracies[name] = np.array(accuracies[name])[order]
+        stdDevs[name] = np.array(stdDevs[name])[order]
         costs[name] = np.array(costs[name])[order]
         queries[name] = np.array(queries[name])[order]
 
@@ -144,7 +153,10 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
     ymax = int((max([accuracies[name].max() for name in names]) + 0.1) * 10.0) / 10.0
 
     # Set the font to be larger.
-    font = {'family': 'normal', 'weight': 'bold', 'size': 22}
+    font = {#'family': 'normal',
+            'weight': 'bold',
+            'size': 20, #22
+            }
     mpl.rc('font', **font)
     plt.gcf().subplots_adjust(bottom=0.15)
 
@@ -168,7 +180,14 @@ def plot_data(directory, dataset, scenario, legendLocation='lower_right'):
         if name == "PAL (Baseline): Fixed (Oracle 1)" or name == "PAL (Baseline): Fixed (Oracle 2)":
             continue
 
-        plt.plot(budgets, accuracies[name], label=nameMap[name],
+        plt.errorbar(budgets, accuracies[name],
+                    yerr=stdDevs[name],# label=nameMap[name],
+                    linestyle=linestyleMap[name], linewidth=1,
+                    marker=markerMap[name], markersize=14,
+                    color=colorMap[name])
+
+        plt.plot(budgets, accuracies[name],
+                    label=nameMap[name],
                     linestyle=linestyleMap[name], linewidth=4,
                     marker=markerMap[name], markersize=14,
                     color=colorMap[name])
